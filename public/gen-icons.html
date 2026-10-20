@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head><title>Generate PWA Icons</title></head>
+<body>
+  <h2>Generating PWA Icons...</h2>
+  <div id="status">Loading...</div>
+  <script>
+    async function generateAll() {
+      const status = document.getElementById('status');
+      
+      const sizes = [
+        { file: 'icon-192.png', size: 192, svg: '/icons/icon.svg' },
+        { file: 'icon-512.png', size: 512, svg: '/icons/icon.svg' },
+        { file: 'icon-maskable-512.png', size: 512, svg: '/icons/icon-maskable.svg' },
+        { file: 'icon-180.png', size: 180, svg: '/icons/icon.svg' },
+        { file: 'icon-152.png', size: 152, svg: '/icons/icon.svg' },
+        { file: 'icon-167.png', size: 167, svg: '/icons/icon.svg' }
+      ];
+
+      for (const item of sizes) {
+        status.textContent = 'Rendering ' + item.file + '...';
+        const img = new Image();
+        img.src = item.svg + '?v=' + Date.now();
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+        });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = item.size;
+        canvas.height = item.size;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, item.size, item.size);
+        const base64 = canvas.toDataURL('image/png');
+
+        await fetch('/api/save-icon', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: item.file, base64 })
+        });
+      }
+
+      status.textContent = 'SUCCESS: All PWA icons generated!';
+      document.title = 'DONE';
+    }
+
+    generateAll().catch(e => {
+      document.getElementById('status').textContent = 'Error: ' + e.message;
+    });
+  </script>
+</body>
+</html>

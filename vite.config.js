@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 import forgotPasswordHandler from './api/forgot-password.js'
 import resetPasswordHandler from './api/reset-password.js'
 
+import fs from 'fs'
+import path from 'path'
+
 function apiDevPlugin() {
   return {
     name: 'api-dev-middleware',

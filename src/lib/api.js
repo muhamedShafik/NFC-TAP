@@ -108,7 +108,7 @@ export function getShopSlug(shop) {
 }
 
 // ===================== SHOPS =====================
-export async function getShops() {
+export async function getRawShops() {
   if (supabaseConfigured) {
     const { data, error } = await supabase
       .from('shops')
@@ -129,8 +129,44 @@ export async function getShops() {
   }))
 }
 
+export async function getShops() {
+  const shopList = await getRawShops()
+  try {
+    const cards = await getRawCards()
+    return shopList.map(shop => {
+      const assignedCard = cards.find(c =>
+        c.status === 'assigned' && (
+          c.shop_id === shop.id ||
+          c.shop_id === shop.slug ||
+          (c.shop_name && slugify(c.shop_name) === slugify(shop.name))
+        )
+      )
+      return {
+        ...shop,
+        card: assignedCard || null,
+        card_code: assignedCard ? assignedCard.code : null
+      }
+    })
+  } catch {
+    return shopList
+  }
+}
+
 export async function getShopById(idOrSlug) {
   const cleanKey = (idOrSlug || '').toString().trim().toLowerCase()
+  if (!cleanKey) throw new Error('Shop identifier required')
+
+  // 0. Check if cleanKey is a Card Code (e.g. CARD-1001)
+  try {
+    const cardCode = extractCardCode(idOrSlug)
+    if (cardCode && (cardCode.startsWith('CARD-') || cardCode.startsWith('NFC-') || cardCode.startsWith('TAP-'))) {
+      const cards = await getRawCards()
+      const card = cards.find(c => c.code.toUpperCase() === cardCode)
+      if (card && card.status === 'assigned' && card.shop_id) {
+        return await getShopById(card.shop_id)
+      }
+    }
+  } catch {}
 
   if (supabaseConfigured) {
     try {
@@ -619,7 +655,7 @@ export async function isCardsTableAvailable() {
   }
 }
 
-export async function getCards() {
+export async function getRawCards() {
   let cards = []
   let tableAvailable = false
 
@@ -680,21 +716,27 @@ export async function getCards() {
     cards = getLocalCards()
   }
 
-  // Enrich with shop information
+  return cards
+}
+
+export async function getCards() {
+  const cards = await getRawCards()
+
+  // Enrich with shop information (using getRawShops to prevent recursion)
   try {
-    const shops = await getShops()
+    const shops = await getRawShops()
     const shopMap = new Map(shops.map(s => [s.id, s]))
-    cards = cards.map(c => {
+    return cards.map(c => {
       const matchedShop = c.shop_id ? (shopMap.get(c.shop_id) || shops.find(s => s.slug === c.shop_id || slugify(s.name) === c.shop_id)) : null
       return {
         ...c,
         shop: matchedShop || null,
-        shop_name: matchedShop ? matchedShop.name : null
+        shop_name: matchedShop ? matchedShop.name : (c.shop_name || null)
       }
     })
-  } catch {}
-
-  return cards
+  } catch {
+    return cards
+  }
 }
 
 export async function getCardByCode(rawCode) {

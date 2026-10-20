@@ -28,6 +28,7 @@ import {
   AlertTriangle
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import Swal from 'sweetalert2'
 
 export default function BulkQRPage() {
   const [cards, setCards] = useState([])
@@ -150,15 +151,43 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
     }
   }
 
-  // Handle unassigning a card
+  // Handle unassigning a card (toast notification without prompt)
   async function handleUnassign(code) {
-    if (!window.confirm(`Unassign card ${code} from its shop? The card will become available again.`)) return
     try {
       await unassignCard(code)
-      toast.success(`Card ${code} unassigned`)
+      toast.success(`Card ${code} unassigned and available again!`, {
+        icon: '🔄',
+        duration: 3500,
+        style: {
+          borderRadius: '10px',
+          background: '#0f172a',
+          color: '#f8fafc',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }
+      })
       await loadCards()
     } catch {
       toast.error('Failed to unassign card')
+    }
+  }
+
+  // Handle reassigning a card with SweetAlert confirmation
+  async function handleReassignClick(card) {
+    const result = await Swal.fire({
+      title: 'Reassign Card?',
+      html: `Card <b style="color:#818cf8; font-family:monospace;">${card.code}</b> is currently linked to <b>${card.shop_name || 'a shop'}</b>.<br/><br/><span style="color:#94a3b8; font-size:0.875rem;">Would you like to assign this card to another shop?</span>`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Reassign',
+      cancelButtonText: 'Cancel',
+      background: '#0f172a',
+      color: '#f8fafc',
+      confirmButtonColor: '#6366f1',
+      cancelButtonColor: '#334155'
+    })
+
+    if (result.isConfirmed) {
+      setAssignModal({ open: true, code: card.code })
     }
   }
 
@@ -575,7 +604,7 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
                         type="button"
                         className="btn btn-ghost btn-sm"
                         style={{ fontSize: '0.75rem' }}
-                        onClick={() => setAssignModal({ open: true, code: card.code })}
+                        onClick={() => handleReassignClick(card)}
                         title="Reassign to another shop"
                       >
                         Reassign

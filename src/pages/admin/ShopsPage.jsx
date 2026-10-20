@@ -10,6 +10,9 @@ import { Camera } from 'lucide-react'
 import './ShopsPage.css'
 
 function getReviewUrl(shop) {
+  if (shop?.card_code) {
+    return `${window.location.origin}/c/${shop.card_code}`
+  }
   const slug = getShopSlug(shop)
   return `${window.location.origin}/r/${slug}`
 }
@@ -166,6 +169,7 @@ export default function ShopsPage() {
               onQR={() => setQrModal({ open: true, shop })}
               onCopyUrl={() => copyUrl(shop)}
               onPreview={() => window.open(getReviewUrl(shop), '_blank')}
+              onAssignCard={() => setScanModalOpen(true)}
             />
           ))}
         </div>
@@ -218,8 +222,11 @@ export default function ShopsPage() {
   )
 }
 
-function ShopCard({ shop, onEdit, onDelete, onToggle, onQR, onCopyUrl, onPreview }) {
+function ShopCard({ shop, onEdit, onDelete, onToggle, onQR, onCopyUrl, onPreview, onAssignCard }) {
   const platforms = shop.platforms || []
+  const hasCard = Boolean(shop.card_code)
+  const displayUrl = hasCard ? `/c/${shop.card_code}` : `/r/${getShopSlug(shop)}`
+
   return (
     <div className="shop-card">
       <div className="shop-card-banner" style={{ background: shop.cover_color || '#6c63ff' }} />
@@ -239,6 +246,45 @@ function ShopCard({ shop, onEdit, onDelete, onToggle, onQR, onCopyUrl, onPreview
           </div>
         </div>
 
+        {/* Physical Card / QR Standee Association */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0.45rem 0.65rem',
+          borderRadius: 'var(--radius-sm)',
+          background: hasCard ? 'rgba(99,102,241,0.08)' : 'rgba(255,255,255,0.03)',
+          border: hasCard ? '1px solid rgba(99,102,241,0.25)' : '1px dashed var(--border)',
+          fontSize: '0.78rem',
+          margin: '0.65rem 0 0.5rem 0'
+        }}>
+          {hasCard ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span>💳</span>
+              <span style={{ color: 'var(--text-muted)' }}>Card:</span>
+              <strong style={{ color: 'var(--accent)', fontFamily: 'monospace' }}>{shop.card_code}</strong>
+            </div>
+          ) : (
+            <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.75rem' }}>No physical card linked</span>
+          )}
+
+          {hasCard ? (
+            <span className="badge" style={{ fontSize: '0.68rem', background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>
+              Permanent QR
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem' }}
+              onClick={onAssignCard}
+              title="Scan or assign a physical card to this shop"
+            >
+              + Link Card
+            </button>
+          )}
+        </div>
+
         {/* Platforms */}
         <div className="shop-platforms">
           {platforms.length === 0
@@ -251,13 +297,15 @@ function ShopCard({ shop, onEdit, onDelete, onToggle, onQR, onCopyUrl, onPreview
 
         {/* URL Row */}
         <div className="shop-url-row">
-          <span className="shop-url-text">/r/{getShopSlug(shop)}</span>
-          <button className="btn btn-ghost btn-sm btn-icon" onClick={onCopyUrl} title="Copy URL">📋</button>
+          <span className="shop-url-text" title={displayUrl}>
+            {displayUrl}
+          </span>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={onCopyUrl} title="Copy QR Link">📋</button>
         </div>
 
         {/* Actions */}
         <div className="shop-actions">
-          <button className="btn btn-ghost btn-sm" onClick={onQR}>🔳 QR</button>
+          <button className="btn btn-ghost btn-sm" onClick={onQR} title="View & Download QR Code">🔳 QR</button>
           <button className="btn btn-ghost btn-sm" onClick={onEdit}>✏️ Edit</button>
           <button className="btn btn-ghost btn-sm" onClick={onPreview}>👁 Preview</button>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={onToggle}

@@ -1,8 +1,10 @@
-import { useState } from 'react'
-import { Eye, EyeOff, Database, Copy, Check } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Eye, EyeOff, Database, Copy, Check, Smartphone, RefreshCw, Sparkles, CheckCircle2 } from 'lucide-react'
 import { supabase, supabaseConfigured } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { sendForgotPasswordEmail, verifyResetCodeAndSetPassword } from '../../lib/api'
+import InstallPwaModal from '../../components/common/InstallPwaModal'
+import { isStandalone, isIOS, isAndroid } from '../../registerServiceWorker'
 import toast from 'react-hot-toast'
 
 export default function SettingsPage() {
@@ -13,6 +15,8 @@ export default function SettingsPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sendingReset, setSendingReset] = useState(false)
+  const [pwaModalOpen, setPwaModalOpen] = useState(false)
+  const [isInstalledApp, setIsInstalledApp] = useState(isStandalone())
   
   // State for code-based verification in settings
   const [showCodeInput, setShowCodeInput] = useState(false)
@@ -446,7 +450,129 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
           </div>
         </div>
 
+        {/* PWA & Mobile App Section */}
+        <div className="card" style={{ marginTop: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+            <div>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, fontSize: '1.1rem' }}>
+                <Smartphone size={20} style={{ color: 'var(--accent)' }} />
+                Progressive Web App (PWA) & Mobile
+              </h3>
+              <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                High-compatibility standalone mobile app for Android, iOS Safari, and Desktop Chrome.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setPwaModalOpen(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <Smartphone size={15} />
+              {isInstalledApp ? 'View App Details' : 'Install App on this Device'}
+            </button>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '1rem',
+            marginBottom: '1rem'
+          }}>
+            <div style={{
+              background: 'var(--bg-glass)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '1rem'
+            }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>
+                Installation Status
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem' }}>
+                {isInstalledApp ? (
+                  <>
+                    <CheckCircle2 size={16} style={{ color: 'var(--success)' }} />
+                    <span style={{ fontWeight: 600, color: 'var(--success)', fontSize: '0.9rem' }}>Installed (Standalone)</span>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>Running in Browser</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div style={{
+              background: 'var(--bg-glass)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '1rem'
+            }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>
+                Current Platform
+              </span>
+              <div style={{ marginTop: '0.35rem', fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                {isIOS() ? '🍎 Apple iOS (Safari / WebKit)' : isAndroid() ? '🤖 Android (Chrome / Web)' : '💻 Desktop / Other Browser'}
+              </div>
+            </div>
+
+            <div style={{
+              background: 'var(--bg-glass)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '1rem'
+            }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>
+                Offline Cache & Shell
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem' }}>
+                <Sparkles size={16} style={{ color: '#818cf8' }} />
+                <span style={{ fontWeight: 600, color: '#818cf8', fontSize: '0.9rem' }}>Service Worker Active</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
+            paddingTop: '0.75rem',
+            borderTop: '1px solid var(--border)'
+          }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Icons: 192px, 512px, Maskable & Apple Touch 180px configured in <code>manifest.json</code>.
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={async () => {
+                if ('serviceWorker' in navigator) {
+                  const regs = await navigator.serviceWorker.getRegistrations()
+                  for (let r of regs) await r.update()
+                  toast.success('Service Worker cache checked & refreshed')
+                } else {
+                  toast('Service worker not supported in this environment')
+                }
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <RefreshCw size={13} /> Check Cache Updates
+            </button>
+          </div>
+        </div>
+
       </div>
+
+      {/* PWA Modal */}
+      {pwaModalOpen && (
+        <InstallPwaModal
+          isOpen={pwaModalOpen}
+          onClose={() => setPwaModalOpen(false)}
+        />
+      )}
     </div>
   )
 }

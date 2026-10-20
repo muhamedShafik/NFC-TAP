@@ -4,7 +4,8 @@ import { adminSignOut } from '../../lib/api'
 import { useAuth } from '../../contexts/AuthContext'
 import ScanCardModal from '../../components/admin/ScanCardModal'
 import AssignCardModal from '../../components/admin/AssignCardModal'
-import { Camera } from 'lucide-react'
+import InstallPwaModal from '../../components/common/InstallPwaModal'
+import { Camera, Smartphone } from 'lucide-react'
 import toast from 'react-hot-toast'
 import './AdminLayout.css'
 
@@ -19,6 +20,7 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [scanModalOpen, setScanModalOpen] = useState(false)
   const [assignModal, setAssignModal] = useState({ open: false, code: '' })
+  const [pwaModalOpen, setPwaModalOpen] = useState(false)
   const navigate = useNavigate()
   const { demoSignOut } = useAuth()
 
@@ -86,6 +88,14 @@ export default function AdminLayout() {
         </nav>
 
         <div className="sidebar-footer">
+          <button
+            className="nav-item"
+            onClick={() => setPwaModalOpen(true)}
+            style={{ width: '100%', color: '#818cf8', marginBottom: '0.25rem', fontWeight: 600 }}
+          >
+            <span className="nav-icon">📲</span>
+            Install App
+          </button>
           <button className="nav-item" onClick={handleLogout} style={{ width: '100%' }}>
             <span className="nav-icon">🚪</span>
             Sign Out
@@ -107,20 +117,39 @@ export default function AdminLayout() {
           </button>
           <span className="topbar-logo">NFC<span>Tap</span></span>
 
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={() => setScanModalOpen(true)}
-            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
-          >
-            <Camera size={14} /> Scan
-          </button>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setPwaModalOpen(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', padding: '0.4rem 0.6rem' }}
+              title="Install Web App on your phone"
+            >
+              <Smartphone size={14} /> App
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setScanModalOpen(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
+            >
+              <Camera size={14} /> Scan
+            </button>
+          </div>
         </header>
 
         <div className="page-content">
           <Outlet />
         </div>
       </div>
+
+      {/* PWA Install Modal */}
+      {pwaModalOpen && (
+        <InstallPwaModal
+          isOpen={pwaModalOpen}
+          onClose={() => setPwaModalOpen(false)}
+        />
+      )}
 
       {/* Universal Scanner Modal */}
       {scanModalOpen && (

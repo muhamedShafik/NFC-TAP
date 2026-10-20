@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { getShops, createShop, assignCardToShop, getCardByCode, getCardUrl, slugify } from '../../lib/api'
 import { PLATFORMS } from '../../lib/platforms.jsx'
 import { CreditCard, PlusCircle, Link, Check, ExternalLink } from 'lucide-react'
+import Swal from 'sweetalert2'
 import toast from 'react-hot-toast'
 
 const COLORS = [
@@ -64,11 +65,40 @@ export default function AssignCardModal({ cardCode, isOpen, onClose, onAssigned 
       toast.error('Please choose a shop')
       return
     }
+
+    const shop = existingShops.find(s => s.id === selectedShopId)
+
+    if (cardInfo?.status === 'assigned') {
+      const confirm = await Swal.fire({
+        title: 'Reassign Card?',
+        html: `Card <b style="color:#818cf8; font-family:monospace;">${cardCode}</b> is currently assigned to <b>${cardInfo.shop_name || 'another shop'}</b>.<br/><br/>Do you want to reassign it to <b>${shop?.name}</b>?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Reassign',
+        cancelButtonText: 'Cancel',
+        background: '#0f172a',
+        color: '#f8fafc',
+        confirmButtonColor: '#6366f1',
+        cancelButtonColor: '#334155'
+      })
+      if (!confirm.isConfirmed) return
+    }
+
     setSaving(true)
     try {
       await assignCardToShop(cardCode, selectedShopId)
-      const shop = existingShops.find(s => s.id === selectedShopId)
       toast.success(`Card ${cardCode} assigned to ${shop?.name || 'shop'}!`)
+      if (cardInfo?.status === 'assigned') {
+        Swal.fire({
+          title: 'Card Reassigned!',
+          html: `Card <b style="color:#818cf8; font-family:monospace;">${cardCode}</b> is now linked to <b>${shop?.name}</b>.`,
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false,
+          background: '#0f172a',
+          color: '#f8fafc'
+        })
+      }
       onAssigned?.(shop, cardCode)
       onClose()
     } catch (err) {
@@ -84,6 +114,23 @@ export default function AssignCardModal({ cardCode, isOpen, onClose, onAssigned 
       toast.error('Please enter a shop name')
       return
     }
+
+    if (cardInfo?.status === 'assigned') {
+      const confirm = await Swal.fire({
+        title: 'Reassign Card to New Shop?',
+        html: `Card <b style="color:#818cf8; font-family:monospace;">${cardCode}</b> is currently assigned to <b>${cardInfo.shop_name || 'another shop'}</b>.<br/><br/>Do you want to reassign it to new shop <b>${name.trim()}</b>?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Reassign',
+        cancelButtonText: 'Cancel',
+        background: '#0f172a',
+        color: '#f8fafc',
+        confirmButtonColor: '#6366f1',
+        cancelButtonColor: '#334155'
+      })
+      if (!confirm.isConfirmed) return
+    }
+
     setSaving(true)
     try {
       const cleanSlug = slugify(name.trim())
@@ -102,6 +149,17 @@ export default function AssignCardModal({ cardCode, isOpen, onClose, onAssigned 
       await assignCardToShop(cardCode, newShop.id)
 
       toast.success(`Shop created and card ${cardCode} activated!`)
+      if (cardInfo?.status === 'assigned') {
+        Swal.fire({
+          title: 'Card Reassigned!',
+          html: `Card <b style="color:#818cf8; font-family:monospace;">${cardCode}</b> has been linked to <b>${newShop.name}</b>.`,
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false,
+          background: '#0f172a',
+          color: '#f8fafc'
+        })
+      }
       onAssigned?.(newShop, cardCode)
       onClose()
     } catch (err) {

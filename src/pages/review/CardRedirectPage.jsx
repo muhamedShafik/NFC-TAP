@@ -28,9 +28,9 @@ export default function CardRedirectPage() {
           setNotFound(true)
         } else {
           setCard(found)
-          // If assigned and shop is active, redirect to the shop review page URL
+          // If assigned and shop is active, redirect to the shop review page using permanent shop ID
           if (found.status === 'assigned' && found.shop_id) {
-            const target = found.shop?.slug || found.shop_id
+            const target = found.shop?.id || found.shop_id
             navigate(`/r/${target}`, { replace: true })
             return
           }
