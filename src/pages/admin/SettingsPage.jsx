@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react'
-import { Eye, EyeOff, Database, Copy, Check, Smartphone, RefreshCw, Sparkles, CheckCircle2 } from 'lucide-react'
-import { supabase, supabaseConfigured } from '../../lib/supabase'
+import { useState } from 'react'
+import { Eye, EyeOff, Smartphone, RefreshCw, Sparkles, CheckCircle2 } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { sendForgotPasswordEmail, verifyResetCodeAndSetPassword } from '../../lib/api'
 import InstallPwaModal from '../../components/common/InstallPwaModal'
 import { isStandalone, isIOS, isAndroid } from '../../registerServiceWorker'
 import toast from 'react-hot-toast'
+import './SettingsPage.css'
 
 export default function SettingsPage() {
   const { session, isDemoUser } = useAuth()
@@ -16,7 +17,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [sendingReset, setSendingReset] = useState(false)
   const [pwaModalOpen, setPwaModalOpen] = useState(false)
-  const [isInstalledApp, setIsInstalledApp] = useState(isStandalone())
+  const [isInstalledApp] = useState(isStandalone())
   
   // State for code-based verification in settings
   const [showCodeInput, setShowCodeInput] = useState(false)
@@ -25,35 +26,8 @@ export default function SettingsPage() {
   const [showCodeNewPass, setShowCodeNewPass] = useState(false)
   const [verifyingCode, setVerifyingCode] = useState(false)
 
-  const [copiedSql, setCopiedSql] = useState(false)
-
   const adminEmail = session?.user?.email || 'muhammedshafik9544@gmail.com'
   const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://yourdomain.com'
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'Not connected'
-
-  const rlsFixSql = `-- 1. Disable RLS so shops, platforms & analytics can be read and written freely:
-ALTER TABLE shops DISABLE ROW LEVEL SECURITY;
-ALTER TABLE platforms DISABLE ROW LEVEL SECURITY;
-ALTER TABLE analytics DISABLE ROW LEVEL SECURITY;
-
--- 2. Optional: Create cards table if you want bulk card inventory in Supabase:
-CREATE TABLE IF NOT EXISTS cards (
-  id TEXT PRIMARY KEY,
-  code TEXT UNIQUE NOT NULL,
-  batch_name TEXT DEFAULT 'Batch 1',
-  status TEXT DEFAULT 'unassigned',
-  shop_id TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  assigned_at TIMESTAMPTZ
-);
-ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
-
-  function copyRlsSql() {
-    navigator.clipboard.writeText(rlsFixSql)
-    setCopiedSql(true)
-    toast.success('SQL copied to clipboard! Paste it into Supabase SQL Editor.')
-    setTimeout(() => setCopiedSql(false), 3000)
-  }
 
   async function updatePassword(e) {
     e.preventDefault()
@@ -126,7 +100,7 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
   }
 
   return (
-    <div>
+    <div className="settings-container">
       <div className="page-header">
         <div className="page-header-left">
           <h1>Settings</h1>
@@ -134,24 +108,20 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.5rem', maxWidth: 960 }}>
+      <div className="settings-grid">
         
         {/* Account & Security */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <div>
-            <h3 style={{ fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div className="settings-card">
+          <div className="settings-card-header">
+            <h3 className="settings-card-title">
               <span>🔐</span> Account & Security
             </h3>
-            <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)' }}>
+            <p className="settings-card-desc">
               Manage credentials for {adminEmail}
             </p>
           </div>
 
-          <div style={{
-            background: 'var(--bg-glass)',
-            padding: '0.85rem 1rem',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--border)',
+          <div className="settings-info-box" style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -159,7 +129,7 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
           }}>
             <div>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block' }}>Current Account</span>
-              <strong style={{ color: 'var(--text-primary)' }}>{adminEmail}</strong>
+              <strong style={{ color: 'var(--text-primary)', wordBreak: 'break-all' }}>{adminEmail}</strong>
             </div>
             <span className="badge" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' }}>
               🟢 Active
@@ -216,7 +186,7 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div className="settings-actions">
               <button type="submit" className="btn btn-primary" disabled={saving}>
                 {saving ? <><span className="spinner" /> Updating…</> : 'Update Password'}
               </button>
@@ -228,7 +198,7 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
                 disabled={sendingReset}
                 title="Send a 6-digit OTP verification email via Nodemailer"
               >
-                {sendingReset ? <><span className="spinner" /> Sending…</> : '📧 Send Reset Email (Nodemailer)'}
+                {sendingReset ? <><span className="spinner" /> Sending…</> : '📧 Send Reset Email'}
               </button>
             </div>
           </form>
@@ -239,7 +209,7 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
               background: 'rgba(99,102,241,0.06)',
               border: '1px solid rgba(99,102,241,0.25)',
               borderRadius: 'var(--radius-md)',
-              padding: '1.25rem',
+              padding: '1.1rem',
               marginTop: '0.5rem'
             }}>
               <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: 'var(--accent)', fontWeight: 600 }}>
@@ -288,7 +258,7 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <button type="submit" className="btn btn-primary btn-sm" disabled={verifyingCode}>
                     {verifyingCode ? <><span className="spinner" /> Verifying…</> : 'Confirm & Save'}
                   </button>
@@ -302,23 +272,18 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
         </div>
 
         {/* NFC Card Hardware & Tagging Info */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <div>
-            <h3 style={{ fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div className="settings-card">
+          <div className="settings-card-header">
+            <h3 className="settings-card-title">
               <span>📲</span> NFC Card Programming
             </h3>
-            <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)' }}>
+            <p className="settings-card-desc">
               Card encoding specifications for physical review cards
             </p>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.825rem' }}>
-            <div style={{
-              background: 'var(--bg-glass)',
-              padding: '0.85rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)'
-            }}>
+            <div className="settings-info-box">
               <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block', marginBottom: '0.25rem' }}>
                 NFC Target URL Format
               </span>
@@ -327,12 +292,7 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
               </code>
             </div>
 
-            <div style={{
-              background: 'var(--bg-glass)',
-              padding: '0.85rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)'
-            }}>
+            <div className="settings-info-box">
               <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block', marginBottom: '0.25rem' }}>
                 Recommended NFC Chips
               </span>
@@ -341,12 +301,7 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
               </p>
             </div>
 
-            <div style={{
-              background: 'var(--bg-glass)',
-              padding: '0.85rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)'
-            }}>
+            <div className="settings-info-box">
               <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block', marginBottom: '0.25rem' }}>
                 Recommended Mobile Writer
               </span>
@@ -357,108 +312,15 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
           </div>
         </div>
 
-        {/* Supabase Database Connection Status */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', gridColumn: '1/-1' }}>
-          <div>
-            <h3 style={{ fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Database size={18} color="var(--accent)" /> Supabase Database & Cloud Storage
-            </h3>
-            <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)' }}>
-              Live connection status between your NFC application and Supabase PostgreSQL database
-            </p>
-          </div>
-
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-            gap: '1rem'
-          }}>
-            <div style={{
-              background: 'var(--bg-glass)',
-              padding: '0.85rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)'
-            }}>
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block', marginBottom: '0.25rem' }}>
-                Storage Mode
-              </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span className="badge" style={{
-                  background: supabaseConfigured ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
-                  color: supabaseConfigured ? '#10b981' : '#f59e0b',
-                  border: `1px solid ${supabaseConfigured ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`
-                }}>
-                  {supabaseConfigured ? '🟢 Connected to Supabase Cloud' : '⚠️ Local Storage (Demo Mode)'}
-                </span>
-              </div>
-            </div>
-
-            <div style={{
-              background: 'var(--bg-glass)',
-              padding: '0.85rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)'
-            }}>
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block', marginBottom: '0.25rem' }}>
-                Supabase Project URL
-              </span>
-              <code style={{ color: 'var(--accent)', fontSize: '0.85rem', wordBreak: 'break-all' }}>
-                {supabaseUrl}
-              </code>
-            </div>
-          </div>
-
-          <div style={{
-            background: 'rgba(99,102,241,0.06)',
-            border: '1px solid rgba(99,102,241,0.25)',
-            borderRadius: 'var(--radius-md)',
-            padding: '1.25rem'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
-              <div>
-                <h4 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 600 }}>
-                  ⚡ Supabase Row Level Security (RLS) Permission Fix
-                </h4>
-                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  If you ever see <code>new row violates row-level security policy</code> when adding or modifying shops, run this SQL in your Supabase SQL Editor:
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={copyRlsSql}
-                className="btn btn-primary btn-sm"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-              >
-                {copiedSql ? <Check size={14} /> : <Copy size={14} />}
-                {copiedSql ? 'Copied SQL!' : 'Copy SQL Fix'}
-              </button>
-            </div>
-
-            <pre style={{
-              margin: 0,
-              padding: '0.75rem',
-              background: 'rgba(0,0,0,0.35)',
-              borderRadius: 6,
-              fontSize: '0.78rem',
-              fontFamily: 'monospace',
-              color: '#38bdf8',
-              overflowX: 'auto',
-              border: '1px solid rgba(255,255,255,0.07)'
-            }}>
-              {rlsFixSql}
-            </pre>
-          </div>
-        </div>
-
-        {/* PWA & Mobile App Section */}
-        <div className="card" style={{ marginTop: '1.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
-            <div>
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, fontSize: '1.1rem' }}>
+        {/* Progressive Web App (PWA) & Mobile */}
+        <div className="settings-card settings-full-width">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+            <div className="settings-card-header">
+              <h3 className="settings-card-title">
                 <Smartphone size={20} style={{ color: 'var(--accent)' }} />
                 Progressive Web App (PWA) & Mobile
               </h3>
-              <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              <p className="settings-card-desc">
                 High-compatibility standalone mobile app for Android, iOS Safari, and Desktop Chrome.
               </p>
             </div>
@@ -473,18 +335,8 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
             </button>
           </div>
 
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: '1rem',
-            marginBottom: '1rem'
-          }}>
-            <div style={{
-              background: 'var(--bg-glass)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              padding: '1rem'
-            }}>
+          <div className="settings-pwa-grid">
+            <div className="settings-info-box">
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>
                 Installation Status
               </span>
@@ -503,12 +355,7 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
               </div>
             </div>
 
-            <div style={{
-              background: 'var(--bg-glass)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              padding: '1rem'
-            }}>
+            <div className="settings-info-box">
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>
                 Current Platform
               </span>
@@ -517,12 +364,7 @@ ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
               </div>
             </div>
 
-            <div style={{
-              background: 'var(--bg-glass)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              padding: '1rem'
-            }}>
+            <div className="settings-info-box">
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>
                 Offline Cache & Shell
               </span>

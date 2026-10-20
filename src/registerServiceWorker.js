@@ -60,7 +60,31 @@ function notifyPromptListeners() {
 }
 
 export function registerSW() {
-  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  // Tag html root with pwa-standalone class if launched as PWA
+  if (isStandalone()) {
+    document.documentElement.classList.add('pwa-standalone')
+  }
+
+  // Lock pinch-to-zoom and multi-touch zoom on iOS and Android
+  document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false })
+  document.addEventListener('gesturechange', (e) => e.preventDefault(), { passive: false })
+  document.addEventListener('gestureend', (e) => e.preventDefault(), { passive: false })
+
+  document.addEventListener(
+    'touchmove',
+    (e) => {
+      if (e.touches && e.touches.length > 1) {
+        e.preventDefault()
+      }
+    },
+    { passive: false }
+  )
+
+  if (!('serviceWorker' in navigator)) {
     return
   }
 
