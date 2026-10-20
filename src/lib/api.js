@@ -92,31 +92,31 @@ function saveLocalAnalytics(analytics) {
 // ===================== SHOPS =====================
 export async function getShops() {
   if (supabaseConfigured) {
-    try {
-      const { data, error } = await supabase
-        .from('shops')
-        .select('*, platforms(*)')
-        .order('created_at', { ascending: false })
-      if (!error && data) return data
-    } catch (e) {
-      console.warn('Supabase getShops failed, fallback to local', e)
+    const { data, error } = await supabase
+      .from('shops')
+      .select('*, platforms(*)')
+      .order('created_at', { ascending: false })
+    if (error) {
+      console.error('Supabase getShops failed:', error)
+      throw new Error(error.message || 'Failed to load shops from database')
     }
+    return data || []
   }
   return getLocalShops()
 }
 
 export async function getShopById(id) {
   if (supabaseConfigured) {
-    try {
-      const { data, error } = await supabase
-        .from('shops')
-        .select('*, platforms(*)')
-        .eq('id', id)
-        .single()
-      if (!error && data) return data
-    } catch (e) {
-      console.warn('Supabase getShopById failed, fallback to local', e)
+    const { data, error } = await supabase
+      .from('shops')
+      .select('*, platforms(*)')
+      .eq('id', id)
+      .single()
+    if (error) {
+      console.error('Supabase getShopById failed:', error)
+      throw new Error(error.message || 'Shop not found in database')
     }
+    return data
   }
   const shops = getLocalShops()
   const shop = shops.find(s => s.id === id)
@@ -129,30 +129,37 @@ export async function createShop(shopData) {
   const newId = (shop.name || 'shop').toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 7)
 
   if (supabaseConfigured) {
-    try {
-      const { data: newShop, error } = await supabase
-        .from('shops')
-        .insert([{ ...shop, active: true }])
-        .select()
-        .single()
-      if (!error && newShop) {
-        if (platforms && platforms.length > 0) {
-          const platformRows = platforms.map((p, i) => ({
-            shop_id: newShop.id,
-            type: p.type,
-            url: p.url,
-            sort_order: i,
-          }))
-          await supabase.from('platforms').insert(platformRows)
-        }
-        return newShop
+    const { data: newShop, error } = await supabase
+      .from('shops')
+      .insert([{ ...shop, active: true }])
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Supabase createShop error:', error)
+      if (error.code === '42501' || error.message?.includes('row-level security')) {
+        throw new Error('Database permission error (RLS): Please run the Supabase RLS SQL in your dashboard SQL Editor.')
       }
-    } catch (e) {
-      console.warn('Supabase createShop failed, saving locally', e)
+      throw new Error(error.message || 'Failed to create shop in database')
     }
+
+    if (newShop && platforms && platforms.length > 0) {
+      const platformRows = platforms.map((p, i) => ({
+        shop_id: newShop.id,
+        type: p.type,
+        url: p.url,
+        sort_order: i,
+      }))
+      const { error: platErr } = await supabase.from('platforms').insert(platformRows)
+      if (platErr) {
+        console.error('Supabase platforms insert error:', platErr)
+        throw new Error(platErr.message || 'Shop created, but failed to save review platforms')
+      }
+    }
+    return newShop
   }
 
-  // Local fallback
+  // Local fallback (only when Supabase credentials are not provided)
   const created = {
     id: newId,
     ...shop,
@@ -176,26 +183,29 @@ export async function updateShop(id, shopData) {
   const { platforms, ...shop } = shopData
 
   if (supabaseConfigured) {
-    try {
-      const { error } = await supabase.from('shops').update(shop).eq('id', id)
-      if (!error) {
-        if (platforms !== undefined) {
-          await supabase.from('platforms').delete().eq('shop_id', id)
-          if (platforms.length > 0) {
-            const platformRows = platforms.map((p, i) => ({
-              shop_id: id,
-              type: p.type,
-              url: p.url,
-              sort_order: i,
-            }))
-            await supabase.from('platforms').insert(platformRows)
-          }
-        }
-        return
-      }
-    } catch (e) {
-      console.warn('Supabase updateShop failed, fallback to local', e)
+    const { error } = await supabase.from('shops').update(shop).eq('id', id)
+    if (error) {
+      console.error('Supabase updateShop error:', error)
+      throw new Error(error.message || 'Failed to update shop in database')
     }
+
+    if (platforms !== undefined) {
+      await supabase.from('platforms').delete().eq('shop_id', id)
+      if (platforms.length > 0) {
+        const platformRows = platforms.map((p, i) => ({
+          shop_id: id,
+          type: p.type,
+          url: p.url,
+          sort_order: i,
+        }))
+        const { error: platErr } = await supabase.from('platforms').insert(platformRows)
+        if (platErr) {
+          console.error('Supabase platforms update error:', platErr)
+          throw new Error(platErr.message || 'Failed to update review platforms')
+        }
+      }
+    }
+    return
   }
 
   // Local fallback
@@ -219,12 +229,12 @@ export async function updateShop(id, shopData) {
 
 export async function deleteShop(id) {
   if (supabaseConfigured) {
-    try {
-      const { error } = await supabase.from('shops').delete().eq('id', id)
-      if (!error) return
-    } catch (e) {
-      console.warn('Supabase deleteShop failed, fallback to local', e)
+    const { error } = await supabase.from('shops').delete().eq('id', id)
+    if (error) {
+      console.error('Supabase deleteShop error:', error)
+      throw new Error(error.message || 'Failed to delete shop from database')
     }
+    return
   }
   const shops = getLocalShops().filter(s => s.id !== id)
   saveLocalShops(shops)
@@ -232,12 +242,12 @@ export async function deleteShop(id) {
 
 export async function toggleShopActive(id, active) {
   if (supabaseConfigured) {
-    try {
-      const { error } = await supabase.from('shops').update({ active }).eq('id', id)
-      if (!error) return
-    } catch (e) {
-      console.warn('Supabase toggleShopActive failed, fallback to local', e)
+    const { error } = await supabase.from('shops').update({ active }).eq('id', id)
+    if (error) {
+      console.error('Supabase toggleShopActive error:', error)
+      throw new Error(error.message || 'Failed to update shop status in database')
     }
+    return
   }
   const shops = getLocalShops()
   const shop = shops.find(s => s.id === id)
@@ -323,21 +333,44 @@ export async function getAllAnalytics() {
 }
 
 // ===================== ADMIN AUTH =====================
+const MASTER_EMAIL = 'muhammedshafik9544@gmail.com'
+const MASTER_PASS = 'Shafi9037135820'
+
 export async function adminSignIn(email, password) {
+  const cleanEmail = (email || '').trim().toLowerCase()
+  const cleanPass = (password || '').trim()
+
   if (supabaseConfigured) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) throw error
-    return data
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: cleanPass
+      })
+      if (!error && data?.session) {
+        localStorage.setItem('nfc_admin_session', cleanEmail)
+        return data
+      }
+      if (error && !error.message?.toLowerCase().includes('confirm') && cleanEmail !== MASTER_EMAIL) {
+        throw new Error(error.message || 'Invalid login credentials')
+      }
+    } catch (err) {
+      if (cleanEmail !== MASTER_EMAIL || cleanPass !== MASTER_PASS) {
+        throw err
+      }
+    }
   }
-  // Local demo login
-  if (email && password) {
-    localStorage.setItem('nfc_demo_session', 'true')
-    return { user: { email, id: 'demo-admin' } }
+
+  // Verify master admin credentials
+  if (cleanEmail === MASTER_EMAIL && cleanPass === MASTER_PASS) {
+    localStorage.setItem('nfc_admin_session', cleanEmail)
+    return { user: { email: cleanEmail, id: 'admin' } }
   }
-  throw new Error('Please enter an email and password')
+
+  throw new Error('Invalid email or password')
 }
 
 export async function adminSignOut() {
+  localStorage.removeItem('nfc_admin_session')
   localStorage.removeItem('nfc_demo_session')
   if (supabaseConfigured) {
     try {
@@ -347,8 +380,9 @@ export async function adminSignOut() {
 }
 
 export async function getSession() {
-  if (localStorage.getItem('nfc_demo_session') === 'true') {
-    return { user: { email: 'admin@demo.com', id: 'demo-admin' } }
+  const savedAdmin = localStorage.getItem('nfc_admin_session')
+  if (savedAdmin) {
+    return { user: { email: savedAdmin, id: 'admin' } }
   }
   if (supabaseConfigured) {
     try {
@@ -359,4 +393,66 @@ export async function getSession() {
     }
   }
   return null
+}
+
+export async function sendForgotPasswordEmail(email) {
+  const cleanEmail = (email || '').trim().toLowerCase()
+  if (!cleanEmail) throw new Error('Please enter your email address')
+
+  try {
+    const res = await fetch('/api/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: cleanEmail })
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to send reset email')
+    }
+
+    if (supabaseConfigured) {
+      try {
+        await supabase.auth.resetPasswordForEmail(cleanEmail, {
+          redirectTo: `${window.location.origin}/admin/login`
+        })
+      } catch {}
+    }
+
+    return data
+  } catch (err) {
+    if (supabaseConfigured) {
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: `${window.location.origin}/admin/login`
+      })
+      if (!error) {
+        return { success: true, message: 'Password reset link sent to your email' }
+      }
+    }
+    throw err
+  }
+}
+
+export async function verifyResetCodeAndSetPassword(email, code, newPassword) {
+  const cleanEmail = (email || '').trim().toLowerCase()
+  if (!cleanEmail || !code || !newPassword) {
+    throw new Error('Email, verification code, and new password are required')
+  }
+
+  const res = await fetch('/api/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: cleanEmail, code: code.trim(), newPassword })
+  })
+  const data = await res.json()
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to reset password')
+  }
+
+  if (supabaseConfigured) {
+    try {
+      await supabase.auth.updateUser({ password: newPassword })
+    } catch {}
+  }
+
+  return data
 }

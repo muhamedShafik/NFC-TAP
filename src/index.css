@@ -82,6 +82,38 @@ input,textarea,select,button{font-family:inherit}
 .form-textarea{resize:vertical;min-height:80px}
 .form-select option{background:var(--bg-card)}
 
+/* ===== PASSWORD INPUT WITH EYE TOGGLE ===== */
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.password-input-wrapper .form-input {
+  padding-right: 2.75rem;
+}
+.password-toggle-btn {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem;
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+  line-height: 1;
+}
+.password-toggle-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-glass);
+}
+
 /* ===== CARD ===== */
 .card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem;transition:var(--transition)}
 .card:hover{border-color:var(--border-strong)}
