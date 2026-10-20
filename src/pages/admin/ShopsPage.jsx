@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { getShops, deleteShop, toggleShopActive, getShopAnalytics } from '../../lib/api'
+import { getShops, deleteShop, toggleShopActive, getShopAnalytics, getShopSlug } from '../../lib/api'
 import ShopModal from '../../components/admin/ShopModal'
 import QRModal from '../../components/admin/QRModal'
 import DeleteModal from '../../components/admin/DeleteModal'
 import './ShopsPage.css'
 
-function getReviewUrl(shopId) {
-  return `${window.location.origin}/r/${shopId}`
+function getReviewUrl(shop) {
+  const slug = getShopSlug(shop)
+  return `${window.location.origin}/r/${slug}`
 }
 
 export default function ShopsPage() {
@@ -69,8 +70,8 @@ export default function ShopsPage() {
     }
   }
 
-  function copyUrl(shopId) {
-    navigator.clipboard.writeText(getReviewUrl(shopId))
+  function copyUrl(shop) {
+    navigator.clipboard.writeText(getReviewUrl(shop))
     toast.success('Review URL copied!')
   }
 
@@ -148,8 +149,8 @@ export default function ShopsPage() {
               onDelete={() => handleDelete(shop)}
               onToggle={() => handleToggle(shop)}
               onQR={() => setQrModal({ open: true, shop })}
-              onCopyUrl={() => copyUrl(shop.id)}
-              onPreview={() => window.open(getReviewUrl(shop.id), '_blank')}
+              onCopyUrl={() => copyUrl(shop)}
+              onPreview={() => window.open(getReviewUrl(shop), '_blank')}
             />
           ))}
         </div>
@@ -166,7 +167,7 @@ export default function ShopsPage() {
       {qrModal.open && (
         <QRModal
           shop={qrModal.shop}
-          url={getReviewUrl(qrModal.shop?.id)}
+          url={getReviewUrl(qrModal.shop)}
           onClose={() => setQrModal({ open: false, shop: null })}
         />
       )}
@@ -215,7 +216,7 @@ function ShopCard({ shop, onEdit, onDelete, onToggle, onQR, onCopyUrl, onPreview
 
         {/* URL Row */}
         <div className="shop-url-row">
-          <span className="shop-url-text">/r/{shop.id}</span>
+          <span className="shop-url-text">/r/{getShopSlug(shop)}</span>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={onCopyUrl} title="Copy URL">📋</button>
         </div>
 

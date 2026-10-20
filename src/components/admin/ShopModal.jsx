@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createShop, updateShop } from '../../lib/api'
+import { createShop, updateShop, slugify } from '../../lib/api'
 import { PLATFORMS, SWATCHES } from '../../lib/platforms.jsx'
 import toast from 'react-hot-toast'
 import './ShopModal.css'
@@ -9,6 +9,8 @@ const PLATFORM_KEYS = Object.keys(PLATFORMS)
 export default function ShopModal({ shop, onClose, onSaved }) {
   const isEdit = !!shop
   const [name, setName] = useState(shop?.name || '')
+  const [slug, setSlug] = useState(shop?.slug || (shop ? slugify(shop.name) : ''))
+  const [customSlug, setCustomSlug] = useState(false)
   const [tagline, setTagline] = useState(shop?.tagline || '')
   const [logo, setLogo] = useState(shop?.logo || '')
   const [color, setColor] = useState(shop?.cover_color || '#6c63ff')
@@ -16,6 +18,14 @@ export default function ShopModal({ shop, onClose, onSaved }) {
     shop?.platforms?.map(p => ({ type: p.type, url: p.url })) || []
   )
   const [saving, setSaving] = useState(false)
+
+  function handleNameChange(e) {
+    const val = e.target.value
+    setName(val)
+    if (!customSlug) {
+      setSlug(slugify(val))
+    }
+  }
 
   function addPlatform(type) {
     if (platforms.find(p => p.type === type)) {
@@ -37,8 +47,10 @@ export default function ShopModal({ shop, onClose, onSaved }) {
     if (!name.trim()) { toast.error('Shop name is required'); return }
     setSaving(true)
     try {
+      const cleanSlug = (slug || slugify(name.trim())).trim()
       const payload = {
         name: name.trim(),
+        slug: cleanSlug,
         tagline: tagline.trim(),
         logo: logo.trim(),
         cover_color: color,
@@ -46,7 +58,7 @@ export default function ShopModal({ shop, onClose, onSaved }) {
       }
       if (isEdit) {
         await updateShop(shop.id, payload)
-        toast.success('Shop updated!')
+        toast.success('Shop & review URL updated!')
       } else {
         await createShop(payload)
         toast.success('Shop created!')
@@ -73,9 +85,19 @@ export default function ShopModal({ shop, onClose, onSaved }) {
           <div className="modal-grid">
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <label className="form-label">Shop Name *</label>
-              <input className="form-input" value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="e.g. Brew Coffee House" required />
+              <input
+                className="form-input"
+                value={name}
+                onChange={handleNameChange}
+                placeholder="e.g. Brew Coffee House"
+                required
+              />
+              <div style={{ marginTop: '0.45rem', fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <span>🔗 Live Review Link:</span>
+                <code style={{ background: 'var(--bg-glass)', color: 'var(--accent)', padding: '0.15rem 0.45rem', borderRadius: 4, fontWeight: 600 }}>
+                  /r/{slug || slugify(name) || 'shop-name'}
+                </code>
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">Tagline</label>

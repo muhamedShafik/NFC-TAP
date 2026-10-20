@@ -63,7 +63,7 @@ export default function DeleteModal({ shop, onConfirm, onClose, deleting }) {
               {shop.name}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-              /r/{shop.id}
+              /r/{shop.slug || shop.id}
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Eye, EyeOff } from 'lucide-react'
-import { supabase } from '../../lib/supabase'
+import { Eye, EyeOff, Database, Copy, Check } from 'lucide-react'
+import { supabase, supabaseConfigured } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { sendForgotPasswordEmail, verifyResetCodeAndSetPassword } from '../../lib/api'
 import toast from 'react-hot-toast'
@@ -21,8 +21,23 @@ export default function SettingsPage() {
   const [showCodeNewPass, setShowCodeNewPass] = useState(false)
   const [verifyingCode, setVerifyingCode] = useState(false)
 
+  const [copiedSql, setCopiedSql] = useState(false)
+
   const adminEmail = session?.user?.email || 'muhammedshafik9544@gmail.com'
   const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://yourdomain.com'
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'Not connected'
+
+  const rlsFixSql = `-- Disable RLS so shops, platforms & analytics can be read and written freely:
+ALTER TABLE shops DISABLE ROW LEVEL SECURITY;
+ALTER TABLE platforms DISABLE ROW LEVEL SECURITY;
+ALTER TABLE analytics DISABLE ROW LEVEL SECURITY;`
+
+  function copyRlsSql() {
+    navigator.clipboard.writeText(rlsFixSql)
+    setCopiedSql(true)
+    toast.success('SQL copied to clipboard! Paste it into Supabase SQL Editor.')
+    setTimeout(() => setCopiedSql(false), 3000)
+  }
 
   async function updatePassword(e) {
     e.preventDefault()
@@ -323,6 +338,99 @@ export default function SettingsPage() {
                 Use <strong>NFC Tools</strong> (iOS App Store & Google Play) to flash URLs to tags in 1-tap.
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Supabase Database Connection Status */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', gridColumn: '1/-1' }}>
+          <div>
+            <h3 style={{ fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Database size={18} color="var(--accent)" /> Supabase Database & Cloud Storage
+            </h3>
+            <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)' }}>
+              Live connection status between your NFC application and Supabase PostgreSQL database
+            </p>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '1rem'
+          }}>
+            <div style={{
+              background: 'var(--bg-glass)',
+              padding: '0.85rem 1rem',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border)'
+            }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block', marginBottom: '0.25rem' }}>
+                Storage Mode
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span className="badge" style={{
+                  background: supabaseConfigured ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
+                  color: supabaseConfigured ? '#10b981' : '#f59e0b',
+                  border: `1px solid ${supabaseConfigured ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`
+                }}>
+                  {supabaseConfigured ? '🟢 Connected to Supabase Cloud' : '⚠️ Local Storage (Demo Mode)'}
+                </span>
+              </div>
+            </div>
+
+            <div style={{
+              background: 'var(--bg-glass)',
+              padding: '0.85rem 1rem',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border)'
+            }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block', marginBottom: '0.25rem' }}>
+                Supabase Project URL
+              </span>
+              <code style={{ color: 'var(--accent)', fontSize: '0.85rem', wordBreak: 'break-all' }}>
+                {supabaseUrl}
+              </code>
+            </div>
+          </div>
+
+          <div style={{
+            background: 'rgba(99,102,241,0.06)',
+            border: '1px solid rgba(99,102,241,0.25)',
+            borderRadius: 'var(--radius-md)',
+            padding: '1.25rem'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                  ⚡ Supabase Row Level Security (RLS) Permission Fix
+                </h4>
+                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  If you ever see <code>new row violates row-level security policy</code> when adding or modifying shops, run this SQL in your Supabase SQL Editor:
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={copyRlsSql}
+                className="btn btn-primary btn-sm"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                {copiedSql ? <Check size={14} /> : <Copy size={14} />}
+                {copiedSql ? 'Copied SQL!' : 'Copy SQL Fix'}
+              </button>
+            </div>
+
+            <pre style={{
+              margin: 0,
+              padding: '0.75rem',
+              background: 'rgba(0,0,0,0.35)',
+              borderRadius: 6,
+              fontSize: '0.78rem',
+              fontFamily: 'monospace',
+              color: '#38bdf8',
+              overflowX: 'auto',
+              border: '1px solid rgba(255,255,255,0.07)'
+            }}>
+              {rlsFixSql}
+            </pre>
           </div>
         </div>
 

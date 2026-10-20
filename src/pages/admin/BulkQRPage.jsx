@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
-import { getShops } from '../../lib/api'
+import { getShops, getShopSlug } from '../../lib/api'
 import toast from 'react-hot-toast'
 
-function getReviewUrl(shopId) {
-  return `${window.location.origin}/r/${shopId}`
+function getReviewUrl(shop) {
+  const slug = getShopSlug(shop)
+  return `${window.location.origin}/r/${slug}`
 }
 
 export default function BulkQRPage() {
@@ -177,7 +178,7 @@ export default function BulkQRPage() {
 
 function QRCard({ shop, size, onDownload }) {
   const ref = useRef(null)
-  const url = getReviewUrl(shop.id)
+  const url = getReviewUrl(shop)
 
   return (
     <div data-shopid={shop.id} className="card" style={{ textAlign: 'center' }}>

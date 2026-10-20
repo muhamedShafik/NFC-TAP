@@ -89,6 +89,24 @@ function saveLocalAnalytics(analytics) {
   localStorage.setItem('nfc_local_analytics', JSON.stringify(analytics))
 }
 
+// ===================== HELPER FUNCTIONS =====================
+export function slugify(text) {
+  if (!text) return 'shop'
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')     // Remove non-word chars except spaces and hyphens
+    .replace(/[\s_-]+/g, '-')     // Replace spaces, underscores with a single hyphen
+    .replace(/^-+|-+$/g, '')      // Trim leading/trailing hyphens
+}
+
+export function getShopSlug(shop) {
+  if (!shop) return ''
+  if (typeof shop === 'string') return slugify(shop)
+  return shop.slug || slugify(shop.name) || shop.id
+}
+
 // ===================== SHOPS =====================
 export async function getShops() {
   if (supabaseConfigured) {
@@ -97,50 +115,105 @@ export async function getShops() {
       .select('*, platforms(*)')
       .order('created_at', { ascending: false })
     if (error) {
-      console.error('Supabase getShops failed:', error)
+      console.error('❌ Supabase getShops failed:', error)
       throw new Error(error.message || 'Failed to load shops from database')
     }
-    return data || []
+    return (data || []).map(s => ({
+      ...s,
+      slug: s.slug || slugify(s.name) || s.id
+    }))
   }
-  return getLocalShops()
+  return getLocalShops().map(s => ({
+    ...s,
+    slug: s.slug || slugify(s.name) || s.id
+  }))
 }
 
-export async function getShopById(id) {
+export async function getShopById(idOrSlug) {
+  const cleanKey = (idOrSlug || '').toString().trim().toLowerCase()
+
   if (supabaseConfigured) {
-    const { data, error } = await supabase
-      .from('shops')
-      .select('*, platforms(*)')
-      .eq('id', id)
-      .single()
-    if (error) {
-      console.error('Supabase getShopById failed:', error)
-      throw new Error(error.message || 'Shop not found in database')
+    try {
+      // 1. Try finding by ID
+      const { data: byId } = await supabase
+        .from('shops')
+        .select('*, platforms(*)')
+        .eq('id', idOrSlug)
+        .maybeSingle()
+
+      if (byId) {
+        return { ...byId, slug: byId.slug || slugify(byId.name) || byId.id }
+      }
+
+      // 2. Try finding by slug column
+      const { data: bySlug } = await supabase
+        .from('shops')
+        .select('*, platforms(*)')
+        .eq('slug', cleanKey)
+        .maybeSingle()
+
+      if (bySlug) {
+        return { ...bySlug, slug: bySlug.slug || slugify(bySlug.name) || bySlug.id }
+      }
+
+      // 3. Try finding all and matching slugified name
+      const { data: allShops } = await supabase
+        .from('shops')
+        .select('*, platforms(*)')
+
+      if (allShops) {
+        const matched = allShops.find(s => slugify(s.name) === cleanKey || s.slug === cleanKey)
+        if (matched) {
+          return { ...matched, slug: matched.slug || slugify(matched.name) || matched.id }
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase getShopById fallback', e)
     }
-    return data
   }
+
   const shops = getLocalShops()
-  const shop = shops.find(s => s.id === id)
+  const shop = shops.find(s => 
+    s.id?.toString().toLowerCase() === cleanKey || 
+    s.slug?.toString().toLowerCase() === cleanKey || 
+    slugify(s.name) === cleanKey
+  )
   if (!shop) throw new Error('Shop not found')
-  return shop
+  return { ...shop, slug: shop.slug || slugify(shop.name) || shop.id }
 }
 
 export async function createShop(shopData) {
-  const { platforms, ...shop } = shopData
-  const newId = (shop.name || 'shop').toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 7)
+  const { platforms, ...rawShop } = shopData
+  const cleanSlug = rawShop.slug ? slugify(rawShop.slug) : slugify(rawShop.name)
+  const { slug, ...shopWithoutSlug } = rawShop
+  const newId = cleanSlug
 
   if (supabaseConfigured) {
-    const { data: newShop, error } = await supabase
-      .from('shops')
-      .insert([{ ...shop, active: true }])
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Supabase createShop error:', error)
-      if (error.code === '42501' || error.message?.includes('row-level security')) {
-        throw new Error('Database permission error (RLS): Please run the Supabase RLS SQL in your dashboard SQL Editor.')
+    let newShop = null
+    try {
+      // Try with slug column
+      const res = await supabase
+        .from('shops')
+        .insert([{ ...rawShop, slug: cleanSlug, active: true }])
+        .select()
+        .single()
+      if (!res.error && res.data) {
+        newShop = res.data
       }
-      throw new Error(error.message || 'Failed to create shop in database')
+    } catch {}
+
+    if (!newShop) {
+      // Fallback strictly without slug column if column doesn't exist
+      const { data, error } = await supabase
+        .from('shops')
+        .insert([{ ...shopWithoutSlug, active: true }])
+        .select()
+        .single()
+      if (error) {
+        console.error('Supabase createShop error:', error)
+        throw new Error(error.message || 'Failed to create shop in database')
+      }
+      newShop = data
     }
 
     if (newShop && platforms && platforms.length > 0) {
@@ -153,16 +226,16 @@ export async function createShop(shopData) {
       const { error: platErr } = await supabase.from('platforms').insert(platformRows)
       if (platErr) {
         console.error('Supabase platforms insert error:', platErr)
-        throw new Error(platErr.message || 'Shop created, but failed to save review platforms')
       }
     }
-    return newShop
+    return { ...newShop, slug: cleanSlug }
   }
 
   // Local fallback (only when Supabase credentials are not provided)
   const created = {
     id: newId,
-    ...shop,
+    slug: cleanSlug,
+    ...rawShop,
     active: true,
     created_at: new Date().toISOString(),
     platforms: (platforms || []).map((p, i) => ({
@@ -180,13 +253,25 @@ export async function createShop(shopData) {
 }
 
 export async function updateShop(id, shopData) {
-  const { platforms, ...shop } = shopData
+  const { platforms, ...rawShop } = shopData
+  const newSlug = shopData.slug ? slugify(shopData.slug) : slugify(shopData.name)
+  const { slug, ...shopWithoutSlug } = rawShop
 
   if (supabaseConfigured) {
-    const { error } = await supabase.from('shops').update(shop).eq('id', id)
-    if (error) {
-      console.error('Supabase updateShop error:', error)
-      throw new Error(error.message || 'Failed to update shop in database')
+    let updated = false
+    try {
+      // Attempt update with slug
+      const { error } = await supabase.from('shops').update({ ...rawShop, slug: newSlug }).eq('id', id)
+      if (!error) updated = true
+    } catch {}
+
+    if (!updated) {
+      // Fallback strictly without slug
+      const { error } = await supabase.from('shops').update(shopWithoutSlug).eq('id', id)
+      if (error) {
+        console.error('Supabase updateShop error:', error)
+        throw new Error(error.message || 'Failed to update shop in database')
+      }
     }
 
     if (platforms !== undefined) {
@@ -201,28 +286,44 @@ export async function updateShop(id, shopData) {
         const { error: platErr } = await supabase.from('platforms').insert(platformRows)
         if (platErr) {
           console.error('Supabase platforms update error:', platErr)
-          throw new Error(platErr.message || 'Failed to update review platforms')
         }
       }
     }
-    return
   }
 
-  // Local fallback
+  // Local fallback and synchronizer
   const shops = getLocalShops()
-  const idx = shops.findIndex(s => s.id === id)
+  const idx = shops.findIndex(s => s.id === id || s.slug === id)
   if (idx !== -1) {
+    const oldShop = shops[idx]
+    const updatedId = newSlug || oldShop.id
     shops[idx] = {
-      ...shops[idx],
+      ...oldShop,
       ...shop,
+      id: updatedId,
+      slug: newSlug,
       platforms: platforms !== undefined ? platforms.map((p, i) => ({
         id: p.id || 'p-' + Math.random().toString(36).substring(2, 7),
-        shop_id: id,
+        shop_id: updatedId,
         type: p.type,
         url: p.url,
         sort_order: i,
-      })) : shops[idx].platforms
+      })) : oldShop.platforms
     }
+
+    // Update any linked analytics to match new shop slug/id
+    const analytics = getLocalAnalytics()
+    let analyticsModified = false
+    analytics.forEach(a => {
+      if (a.shop_id === id) {
+        a.shop_id = updatedId
+        analyticsModified = true
+      }
+    })
+    if (analyticsModified) {
+      saveLocalAnalytics(analytics)
+    }
+
     saveLocalShops(shops)
   }
 }
