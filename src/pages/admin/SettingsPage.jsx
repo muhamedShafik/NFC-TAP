@@ -1,10 +1,8 @@
 import { useState } from 'react'
-import { Eye, EyeOff, Smartphone, RefreshCw, Sparkles, CheckCircle2 } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { sendForgotPasswordEmail, verifyResetCodeAndSetPassword } from '../../lib/api'
-import InstallPwaModal from '../../components/common/InstallPwaModal'
-import { isStandalone, isIOS, isAndroid } from '../../registerServiceWorker'
 import toast from 'react-hot-toast'
 import './SettingsPage.css'
 
@@ -16,8 +14,6 @@ export default function SettingsPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sendingReset, setSendingReset] = useState(false)
-  const [pwaModalOpen, setPwaModalOpen] = useState(false)
-  const [isInstalledApp] = useState(isStandalone())
   
   // State for code-based verification in settings
   const [showCodeInput, setShowCodeInput] = useState(false)
@@ -312,109 +308,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Progressive Web App (PWA) & Mobile */}
-        <div className="settings-card settings-full-width">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-            <div className="settings-card-header">
-              <h3 className="settings-card-title">
-                <Smartphone size={20} style={{ color: 'var(--accent)' }} />
-                Progressive Web App (PWA) & Mobile
-              </h3>
-              <p className="settings-card-desc">
-                High-compatibility standalone mobile app for Android, iOS Safari, and Desktop Chrome.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => setPwaModalOpen(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-            >
-              <Smartphone size={15} />
-              {isInstalledApp ? 'View App Details' : 'Install App on this Device'}
-            </button>
-          </div>
-
-          <div className="settings-pwa-grid">
-            <div className="settings-info-box">
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>
-                Installation Status
-              </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem' }}>
-                {isInstalledApp ? (
-                  <>
-                    <CheckCircle2 size={16} style={{ color: 'var(--success)' }} />
-                    <span style={{ fontWeight: 600, color: 'var(--success)', fontSize: '0.9rem' }}>Installed (Standalone)</span>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
-                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>Running in Browser</span>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="settings-info-box">
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>
-                Current Platform
-              </span>
-              <div style={{ marginTop: '0.35rem', fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                {isIOS() ? '🍎 Apple iOS (Safari / WebKit)' : isAndroid() ? '🤖 Android (Chrome / Web)' : '💻 Desktop / Other Browser'}
-              </div>
-            </div>
-
-            <div className="settings-info-box">
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>
-                Offline Cache & Shell
-              </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem' }}>
-                <Sparkles size={16} style={{ color: '#818cf8' }} />
-                <span style={{ fontWeight: 600, color: '#818cf8', fontSize: '0.9rem' }}>Service Worker Active</span>
-              </div>
-            </div>
-          </div>
-
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: '0.75rem',
-            paddingTop: '0.75rem',
-            borderTop: '1px solid var(--border)'
-          }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Icons: 192px, 512px, Maskable & Apple Touch 180px configured in <code>manifest.json</code>.
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={async () => {
-                if ('serviceWorker' in navigator) {
-                  const regs = await navigator.serviceWorker.getRegistrations()
-                  for (let r of regs) await r.update()
-                  toast.success('Service Worker cache checked & refreshed')
-                } else {
-                  toast('Service worker not supported in this environment')
-                }
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-            >
-              <RefreshCw size={13} /> Check Cache Updates
-            </button>
-          </div>
-        </div>
-
       </div>
-
-      {/* PWA Modal */}
-      {pwaModalOpen && (
-        <InstallPwaModal
-          isOpen={pwaModalOpen}
-          onClose={() => setPwaModalOpen(false)}
-        />
-      )}
     </div>
   )
 }
