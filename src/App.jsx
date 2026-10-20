@@ -7,6 +7,7 @@ import AnalyticsPage from './pages/admin/AnalyticsPage'
 import BulkQRPage from './pages/admin/BulkQRPage'
 import SettingsPage from './pages/admin/SettingsPage'
 import ReviewPage from './pages/review/ReviewPage'
+import CardRedirectPage from './pages/review/CardRedirectPage'
 
 function ProtectedRoute({ children }) {
   const { session, loading } = useAuth()
@@ -21,8 +22,9 @@ function ProtectedRoute({ children }) {
 export default function App() {
   return (
     <Routes>
-      {/* Public — Customer Review Page */}
+      {/* Public — Customer Review & Physical Card Tap Routes */}
       <Route path="/r/:shopId" element={<ReviewPage />} />
+      <Route path="/c/:code" element={<CardRedirectPage />} />
 
       {/* Admin Routes */}
       <Route path="/admin/login" element={<LoginPage />} />

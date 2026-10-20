@@ -27,10 +27,22 @@ export default function SettingsPage() {
   const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://yourdomain.com'
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'Not connected'
 
-  const rlsFixSql = `-- Disable RLS so shops, platforms & analytics can be read and written freely:
+  const rlsFixSql = `-- 1. Disable RLS so shops, platforms & analytics can be read and written freely:
 ALTER TABLE shops DISABLE ROW LEVEL SECURITY;
 ALTER TABLE platforms DISABLE ROW LEVEL SECURITY;
-ALTER TABLE analytics DISABLE ROW LEVEL SECURITY;`
+ALTER TABLE analytics DISABLE ROW LEVEL SECURITY;
+
+-- 2. Optional: Create cards table if you want bulk card inventory in Supabase:
+CREATE TABLE IF NOT EXISTS cards (
+  id TEXT PRIMARY KEY,
+  code TEXT UNIQUE NOT NULL,
+  batch_name TEXT DEFAULT 'Batch 1',
+  status TEXT DEFAULT 'unassigned',
+  shop_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  assigned_at TIMESTAMPTZ
+);
+ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
 
   function copyRlsSql() {
     navigator.clipboard.writeText(rlsFixSql)

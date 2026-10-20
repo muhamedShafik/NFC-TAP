@@ -557,3 +557,325 @@ export async function verifyResetCodeAndSetPassword(email, code, newPassword) {
 
   return data
 }
+
+// ===================== NFC & QR CARDS =====================
+const INITIAL_DEMO_CARDS = [
+  { id: 'card-1001', code: 'CARD-1001', batch_name: 'Batch 1 (Starter)', status: 'unassigned', shop_id: null, created_at: new Date(Date.now() - 86400000 * 2).toISOString(), assigned_at: null },
+  { id: 'card-1002', code: 'CARD-1002', batch_name: 'Batch 1 (Starter)', status: 'unassigned', shop_id: null, created_at: new Date(Date.now() - 86400000 * 2).toISOString(), assigned_at: null },
+  { id: 'card-1003', code: 'CARD-1003', batch_name: 'Batch 1 (Starter)', status: 'unassigned', shop_id: null, created_at: new Date(Date.now() - 86400000 * 2).toISOString(), assigned_at: null },
+  { id: 'card-1004', code: 'CARD-1004', batch_name: 'Batch 1 (Starter)', status: 'unassigned', shop_id: null, created_at: new Date(Date.now() - 86400000 * 2).toISOString(), assigned_at: null },
+  { id: 'card-1005', code: 'CARD-1005', batch_name: 'Batch 1 (Starter)', status: 'unassigned', shop_id: null, created_at: new Date(Date.now() - 86400000 * 2).toISOString(), assigned_at: null },
+  { id: 'card-1006', code: 'CARD-1006', batch_name: 'Batch 1 (Starter)', status: 'unassigned', shop_id: null, created_at: new Date(Date.now() - 86400000 * 2).toISOString(), assigned_at: null },
+  { id: 'card-1007', code: 'CARD-1007', batch_name: 'Batch 1 (Starter)', status: 'unassigned', shop_id: null, created_at: new Date(Date.now() - 86400000 * 2).toISOString(), assigned_at: null },
+  { id: 'card-1008', code: 'CARD-1008', batch_name: 'Batch 1 (Starter)', status: 'unassigned', shop_id: null, created_at: new Date(Date.now() - 86400000 * 2).toISOString(), assigned_at: null },
+]
+
+export function extractCardCode(input) {
+  if (!input) return ''
+  let text = input.toString().trim()
+  // If input is a URL like http://.../c/CARD-1001 or /c/CARD-1001
+  const urlMatch = text.match(/\/c\/([a-zA-Z0-9_-]+)/i)
+  if (urlMatch && urlMatch[1]) {
+    return urlMatch[1].toUpperCase()
+  }
+  // If it's a URL like http://.../r/bella-supreme-cafe
+  const rMatch = text.match(/\/r\/([a-zA-Z0-9_-]+)/i)
+  if (rMatch && rMatch[1]) {
+    return rMatch[1].toUpperCase()
+  }
+  return text.replace(/[^\w-]/g, '').toUpperCase()
+}
+
+export function getCardUrl(code) {
+  const cleanCode = extractCardCode(code)
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  return `${origin}/c/${cleanCode}`
+}
+
+export function getLocalCards() {
+  const data = localStorage.getItem('nfc_local_cards')
+  if (!data) {
+    localStorage.setItem('nfc_local_cards', JSON.stringify(INITIAL_DEMO_CARDS))
+    return INITIAL_DEMO_CARDS
+  }
+  try {
+    return JSON.parse(data)
+  } catch {
+    return INITIAL_DEMO_CARDS
+  }
+}
+
+export function saveLocalCards(cards) {
+  localStorage.setItem('nfc_local_cards', JSON.stringify(cards))
+}
+
+export async function isCardsTableAvailable() {
+  if (!supabaseConfigured) return false
+  try {
+    const { error } = await supabase.from('cards').select('id').limit(1)
+    return !error
+  } catch {
+    return false
+  }
+}
+
+export async function getCards() {
+  let cards = []
+  let tableAvailable = false
+
+  if (supabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('cards')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (!error && data !== null) {
+        tableAvailable = true
+        cards = data
+      }
+    } catch {}
+  }
+
+  if (tableAvailable) {
+    // If Supabase table is empty, auto-seed local cards into Supabase so all devices have them
+    const local = getLocalCards()
+    const localAssigned = local.filter(c => c.status === 'assigned')
+
+    if (cards.length === 0 && local.length > 0) {
+      try {
+        await supabase.from('cards').insert(local)
+        cards = local
+      } catch (err) {
+        console.warn('Auto-seed cards to Supabase failed:', err)
+      }
+    } else if (localAssigned.length > 0) {
+      // If this device (e.g. phone) has assigned cards locally that are not yet in Supabase, sync them!
+      let needsRefetch = false
+      for (const lc of localAssigned) {
+        const inDb = cards.find(c => c.code.toUpperCase() === lc.code.toUpperCase())
+        if (!inDb || inDb.status !== 'assigned') {
+          try {
+            await supabase.from('cards').upsert({
+              id: lc.id || 'card-' + lc.code.toLowerCase(),
+              code: lc.code.toUpperCase(),
+              batch_name: lc.batch_name || 'Batch 1 (Starter)',
+              status: 'assigned',
+              shop_id: lc.shop_id,
+              created_at: lc.created_at || new Date().toISOString(),
+              assigned_at: lc.assigned_at || new Date().toISOString()
+            })
+            needsRefetch = true
+          } catch {}
+        }
+      }
+      if (needsRefetch) {
+        try {
+          const { data } = await supabase.from('cards').select('*').order('created_at', { ascending: false })
+          if (data && data.length > 0) cards = data
+        } catch {}
+      }
+    }
+  } else {
+    // Fallback when Supabase table does not exist
+    cards = getLocalCards()
+  }
+
+  // Enrich with shop information
+  try {
+    const shops = await getShops()
+    const shopMap = new Map(shops.map(s => [s.id, s]))
+    cards = cards.map(c => {
+      const matchedShop = c.shop_id ? (shopMap.get(c.shop_id) || shops.find(s => s.slug === c.shop_id || slugify(s.name) === c.shop_id)) : null
+      return {
+        ...c,
+        shop: matchedShop || null,
+        shop_name: matchedShop ? matchedShop.name : null
+      }
+    })
+  } catch {}
+
+  return cards
+}
+
+export async function getCardByCode(rawCode) {
+  const code = extractCardCode(rawCode)
+  if (!code) throw new Error('Invalid card code')
+
+  let card = null
+  if (supabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('cards')
+        .select('*')
+        .ilike('code', code)
+        .maybeSingle()
+      if (!error && data) {
+        card = data
+      }
+    } catch {}
+  }
+
+  if (!card) {
+    const local = getLocalCards()
+    card = local.find(c => c.code.toUpperCase() === code) || null
+  }
+
+  if (!card) return null
+
+  // If assigned, enrich with shop
+  if (card.shop_id) {
+    try {
+      const shop = await getShopById(card.shop_id)
+      card.shop = shop
+      card.shop_name = shop.name
+    } catch {}
+  }
+
+  return card
+}
+
+export async function createBulkCards({ quantity = 10, prefix = 'CARD-', startNumber, batchName }) {
+  const existing = await getCards()
+  const cleanPrefix = (prefix || 'CARD-').toUpperCase().trim()
+  
+  // Calculate starting number if not provided
+  let start = parseInt(startNumber, 10)
+  if (isNaN(start) || start <= 0) {
+    const numbers = existing
+      .map(c => {
+        const m = c.code.match(new RegExp(`^${cleanPrefix.replace('-', '\\-')}(\\d+)`, 'i'))
+        return m ? parseInt(m[1], 10) : 0
+      })
+      .filter(n => !isNaN(n) && n > 0)
+    start = numbers.length ? Math.max(...numbers) + 1 : 1001
+  }
+
+  const cleanBatchName = batchName?.trim() || `Batch ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+  const newCards = []
+  const now = new Date().toISOString()
+
+  for (let i = 0; i < quantity; i++) {
+    const num = start + i
+    const code = `${cleanPrefix}${num}`
+    newCards.push({
+      id: 'card-' + code.toLowerCase(),
+      code,
+      batch_name: cleanBatchName,
+      status: 'unassigned',
+      shop_id: null,
+      created_at: now,
+      assigned_at: null
+    })
+  }
+
+  // Attempt Supabase insert if table exists
+  if (supabaseConfigured) {
+    try {
+      const { error } = await supabase.from('cards').insert(newCards)
+      if (!error) {
+        const local = getLocalCards()
+        saveLocalCards([...newCards, ...local])
+        return newCards
+      }
+    } catch {}
+  }
+
+  // Local fallback
+  const local = getLocalCards()
+  const updated = [...newCards, ...local]
+  saveLocalCards(updated)
+  return newCards
+}
+
+export async function assignCardToShop(rawCode, shopId) {
+  const code = extractCardCode(rawCode)
+  if (!code) throw new Error('Card code required')
+  if (!shopId) throw new Error('Shop selection required')
+
+  const now = new Date().toISOString()
+
+  if (supabaseConfigured) {
+    try {
+      // Try upsert to ensure card is created in Supabase even if it was pre-existing only in local storage
+      await supabase
+        .from('cards')
+        .upsert({
+          id: 'card-' + code.toLowerCase(),
+          code: code.toUpperCase(),
+          batch_name: 'Batch 1 (Starter)',
+          status: 'assigned',
+          shop_id: shopId,
+          assigned_at: now
+        })
+    } catch (err) {
+      console.warn('Supabase assignCardToShop failed:', err)
+    }
+  }
+
+  // Update local
+  const local = getLocalCards()
+  const idx = local.findIndex(c => c.code.toUpperCase() === code)
+  if (idx !== -1) {
+    local[idx] = {
+      ...local[idx],
+      status: 'assigned',
+      shop_id: shopId,
+      assigned_at: now
+    }
+  } else {
+    // If card was entered on the fly
+    local.unshift({
+      id: 'card-' + code.toLowerCase(),
+      code,
+      batch_name: 'Custom Assigned',
+      status: 'assigned',
+      shop_id: shopId,
+      created_at: now,
+      assigned_at: now
+    })
+  }
+  saveLocalCards(local)
+  return true
+}
+
+export async function unassignCard(rawCode) {
+  const code = extractCardCode(rawCode)
+  if (!code) throw new Error('Card code required')
+
+  if (supabaseConfigured) {
+    try {
+      await supabase
+        .from('cards')
+        .update({ status: 'unassigned', shop_id: null, assigned_at: null })
+        .ilike('code', code)
+    } catch {}
+  }
+
+  const local = getLocalCards()
+  const idx = local.findIndex(c => c.code.toUpperCase() === code)
+  if (idx !== -1) {
+    local[idx] = {
+      ...local[idx],
+      status: 'unassigned',
+      shop_id: null,
+      assigned_at: null
+    }
+    saveLocalCards(local)
+  }
+  return true
+}
+
+export async function deleteCard(rawCode) {
+  const code = extractCardCode(rawCode)
+  if (!code) throw new Error('Card code required')
+
+  if (supabaseConfigured) {
+    try {
+      await supabase.from('cards').delete().ilike('code', code)
+    } catch {}
+  }
+
+  const local = getLocalCards().filter(c => c.code.toUpperCase() !== code)
+  saveLocalCards(local)
+  return true
+}

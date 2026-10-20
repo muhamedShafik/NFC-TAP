@@ -2,18 +2,23 @@ import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { adminSignOut } from '../../lib/api'
 import { useAuth } from '../../contexts/AuthContext'
+import ScanCardModal from '../../components/admin/ScanCardModal'
+import AssignCardModal from '../../components/admin/AssignCardModal'
+import { Camera } from 'lucide-react'
 import toast from 'react-hot-toast'
 import './AdminLayout.css'
 
 const NAV = [
   { to: '/admin/shops',        icon: '🏪', label: 'Shops' },
+  { to: '/admin/qr-generator', icon: '🔳', label: 'QR & Cards' },
   { to: '/admin/analytics',    icon: '📊', label: 'Analytics' },
-  { to: '/admin/qr-generator', icon: '🔳', label: 'Bulk QR' },
   { to: '/admin/settings',     icon: '⚙️', label: 'Settings' },
 ]
 
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [scanModalOpen, setScanModalOpen] = useState(false)
+  const [assignModal, setAssignModal] = useState({ open: false, code: '' })
   const navigate = useNavigate()
   const { demoSignOut } = useAuth()
 
@@ -22,6 +27,11 @@ export default function AdminLayout() {
     await adminSignOut()
     toast.success('Signed out')
     navigate('/admin/login')
+  }
+
+  function handleCardDetected(code) {
+    setScanModalOpen(false)
+    setAssignModal({ open: true, code })
   }
 
   return (
@@ -38,8 +48,30 @@ export default function AdminLayout() {
           <span className="logo-text">NFC<span>Tap</span></span>
         </div>
 
+        {/* Quick Scan Action */}
+        <div style={{ padding: '0 0.85rem 1rem 0.85rem' }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setScanModalOpen(true)}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.45rem',
+              fontSize: '0.85rem',
+              padding: '0.65rem 0.75rem',
+              borderRadius: 'var(--radius-sm)',
+              boxShadow: '0 0 16px rgba(99,102,241,0.35)'
+            }}
+          >
+            <Camera size={16} /> Scan Card to Assign
+          </button>
+        </div>
+
         <nav className="sidebar-nav">
-          <span className="nav-section-label">Main</span>
+          <span className="nav-section-label">Main Navigation</span>
           {NAV.map(item => (
             <NavLink
               key={item.to}
@@ -74,12 +106,43 @@ export default function AdminLayout() {
             ☰
           </button>
           <span className="topbar-logo">NFC<span>Tap</span></span>
+
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => setScanModalOpen(true)}
+            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
+          >
+            <Camera size={14} /> Scan
+          </button>
         </header>
 
         <div className="page-content">
           <Outlet />
         </div>
       </div>
+
+      {/* Universal Scanner Modal */}
+      {scanModalOpen && (
+        <ScanCardModal
+          isOpen={scanModalOpen}
+          onClose={() => setScanModalOpen(false)}
+          onCardDetected={handleCardDetected}
+        />
+      )}
+
+      {/* Universal Assign Modal */}
+      {assignModal.open && (
+        <AssignCardModal
+          cardCode={assignModal.code}
+          isOpen={assignModal.open}
+          onClose={() => setAssignModal({ open: false, code: '' })}
+          onAssigned={() => {
+            // Trigger refresh if currently on shops or qr page
+            navigate(0)
+          }}
+        />
+      )}
     </div>
   )
 }

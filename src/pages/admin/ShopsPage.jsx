@@ -4,6 +4,9 @@ import { getShops, deleteShop, toggleShopActive, getShopAnalytics, getShopSlug }
 import ShopModal from '../../components/admin/ShopModal'
 import QRModal from '../../components/admin/QRModal'
 import DeleteModal from '../../components/admin/DeleteModal'
+import ScanCardModal from '../../components/admin/ScanCardModal'
+import AssignCardModal from '../../components/admin/AssignCardModal'
+import { Camera } from 'lucide-react'
 import './ShopsPage.css'
 
 function getReviewUrl(shop) {
@@ -18,6 +21,8 @@ export default function ShopsPage() {
   const [shopModal, setShopModal] = useState({ open: false, shop: null })
   const [qrModal, setQrModal] = useState({ open: false, shop: null })
   const [deleteModal, setDeleteModal] = useState({ open: false, shop: null, deleting: false })
+  const [scanModalOpen, setScanModalOpen] = useState(false)
+  const [assignModal, setAssignModal] = useState({ open: false, code: '' })
   const [stats, setStats] = useState({ taps: 0, clicks: 0 })
 
   useEffect(() => { loadShops() }, [])
@@ -87,9 +92,19 @@ export default function ShopsPage() {
           <h1>Shops</h1>
           <p>Manage your NFC review cards</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShopModal({ open: true, shop: null })}>
-          + Add Shop
-        </button>
+        <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setScanModalOpen(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <Camera size={16} /> Scan Card to Assign
+          </button>
+          <button className="btn btn-primary" onClick={() => setShopModal({ open: true, shop: null })}>
+            + Add Shop
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -177,6 +192,26 @@ export default function ShopsPage() {
           deleting={deleteModal.deleting}
           onConfirm={confirmDelete}
           onClose={() => !deleteModal.deleting && setDeleteModal({ open: false, shop: null, deleting: false })}
+        />
+      )}
+
+      {scanModalOpen && (
+        <ScanCardModal
+          isOpen={scanModalOpen}
+          onClose={() => setScanModalOpen(false)}
+          onCardDetected={(code) => {
+            setScanModalOpen(false)
+            setAssignModal({ open: true, code })
+          }}
+        />
+      )}
+
+      {assignModal.open && (
+        <AssignCardModal
+          cardCode={assignModal.code}
+          isOpen={assignModal.open}
+          onClose={() => setAssignModal({ open: false, code: '' })}
+          onAssigned={() => loadShops()}
         />
       )}
     </div>

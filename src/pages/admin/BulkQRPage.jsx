@@ -1,204 +1,707 @@
 import { useState, useRef, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { QRCodeCanvas } from 'qrcode.react'
-import { getShops, getShopSlug } from '../../lib/api'
+import {
+  getCards,
+  createBulkCards,
+  unassignCard,
+  deleteCard,
+  getCardUrl,
+  isCardsTableAvailable
+} from '../../lib/api'
+import ScanCardModal from '../../components/admin/ScanCardModal'
+import AssignCardModal from '../../components/admin/AssignCardModal'
+import {
+  CreditCard,
+  Camera,
+  Plus,
+  Printer,
+  Download,
+  CheckCircle,
+  Clock,
+  Sparkles,
+  ExternalLink,
+  Copy,
+  Check,
+  Trash2,
+  RotateCcw,
+  AlertTriangle
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 
-function getReviewUrl(shop) {
-  const slug = getShopSlug(shop)
-  return `${window.location.origin}/r/${slug}`
-}
-
 export default function BulkQRPage() {
-  const [shops, setShops] = useState([])
-  const [selected, setSelected] = useState(new Set())
-  const [size, setSize] = useState(200)
-  const [generated, setGenerated] = useState(false)
+  const [cards, setCards] = useState([])
   const [loading, setLoading] = useState(true)
-  const qrContainerRef = useRef(null)
+  const [filter, setFilter] = useState('all') // 'all' | 'unassigned' | 'assigned'
+  const [search, setSearch] = useState('')
+
+  // Modals state
+  const [scanModalOpen, setScanModalOpen] = useState(false)
+  const [assignModal, setAssignModal] = useState({ open: false, code: '' })
+  const [batchModalOpen, setBatchModalOpen] = useState(false)
+
+  // Batch generation form state
+  const [batchQty, setBatchQty] = useState(20)
+  const [batchPrefix, setBatchPrefix] = useState('CARD-')
+  const [batchStartNum, setBatchStartNum] = useState('')
+  const [batchName, setBatchName] = useState('')
+  const [generating, setGenerating] = useState(false)
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const qrGridRef = useRef(null)
+
+  const [cardsTableReady, setCardsTableReady] = useState(true)
+  const [copiedSql, setCopiedSql] = useState(false)
+
+  const cardsSql = `CREATE TABLE IF NOT EXISTS cards (
+  id TEXT PRIMARY KEY,
+  code TEXT UNIQUE NOT NULL,
+  batch_name TEXT DEFAULT 'Batch 1',
+  status TEXT DEFAULT 'unassigned',
+  shop_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  assigned_at TIMESTAMPTZ
+);
+ALTER TABLE cards DISABLE ROW LEVEL SECURITY;`
+
+  function copyCardsSql() {
+    navigator.clipboard.writeText(cardsSql)
+    setCopiedSql(true)
+    toast.success('SQL copied! Paste in Supabase SQL Editor and run.')
+    setTimeout(() => setCopiedSql(false), 3000)
+  }
+
+  // Load cards
+  async function loadCards() {
+    setLoading(true)
+    try {
+      const ready = await isCardsTableAvailable()
+      setCardsTableReady(ready)
+      const data = await getCards()
+      setCards(data)
+    } catch {
+      toast.error('Failed to load card inventory')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    getShops().then(data => {
-      setShops(data)
-      setSelected(new Set(data.map(s => s.id)))
-      setLoading(false)
-    }).catch(() => { toast.error('Failed to load shops'); setLoading(false) })
+    loadCards()
   }, [])
 
-  function toggleSelect(id) {
-    setSelected(prev => {
-      const n = new Set(prev)
-      n.has(id) ? n.delete(id) : n.add(id)
-      return n
-    })
+  // Listen to ?assign=CODE in URL query string
+  useEffect(() => {
+    const assignCode = searchParams.get('assign')
+    if (assignCode) {
+      setAssignModal({ open: true, code: assignCode.toUpperCase() })
+      // Clear parameter after opening
+      searchParams.delete('assign')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
+
+  // Summary counts
+  const totalCards = cards.length
+  const assignedCards = cards.filter(c => c.status === 'assigned').length
+  const unassignedCards = totalCards - assignedCards
+  const allAssigned = totalCards > 0 && unassignedCards === 0
+
+  // Filtered cards
+  const filteredCards = cards.filter(c => {
+    if (filter === 'unassigned' && c.status !== 'unassigned') return false
+    if (filter === 'assigned' && c.status !== 'assigned') return false
+    if (search.trim()) {
+      const q = search.toLowerCase().trim()
+      const matchCode = c.code.toLowerCase().includes(q)
+      const matchShop = c.shop_name?.toLowerCase().includes(q)
+      const matchBatch = c.batch_name?.toLowerCase().includes(q)
+      return matchCode || matchShop || matchBatch
+    }
+    return true
+  })
+
+  // Handle scanned card detection
+  function handleCardDetected(code) {
+    setScanModalOpen(false)
+    setAssignModal({ open: true, code })
   }
 
-  function selectAll() { setSelected(new Set(shops.map(s => s.id))) }
-  function deselectAll() { setSelected(new Set()) }
-
-  function generate() {
-    if (selected.size === 0) { toast.error('Select at least one shop'); return }
-    setGenerated(true)
-    toast.success(`${selected.size} QR code(s) generated!`)
+  // Handle batch generation
+  async function handleGenerateBatch(e) {
+    e.preventDefault()
+    setGenerating(true)
+    try {
+      const created = await createBulkCards({
+        quantity: Number(batchQty),
+        prefix: batchPrefix,
+        startNumber: batchStartNum ? Number(batchStartNum) : undefined,
+        batchName: batchName.trim() || undefined
+      })
+      toast.success(`Generated ${created.length} new cards!`, { icon: '✨' })
+      setBatchModalOpen(false)
+      setBatchName('')
+      setBatchStartNum('')
+      await loadCards()
+    } catch (err) {
+      toast.error(err.message || 'Failed to generate bulk cards')
+    } finally {
+      setGenerating(false)
+    }
   }
 
-  async function downloadAll() {
+  // Handle unassigning a card
+  async function handleUnassign(code) {
+    if (!window.confirm(`Unassign card ${code} from its shop? The card will become available again.`)) return
+    try {
+      await unassignCard(code)
+      toast.success(`Card ${code} unassigned`)
+      await loadCards()
+    } catch {
+      toast.error('Failed to unassign card')
+    }
+  }
+
+  // Handle deleting a card
+  async function handleDelete(code) {
+    if (!window.confirm(`Delete card ${code} completely?`)) return
+    try {
+      await deleteCard(code)
+      toast.success(`Card ${code} deleted`)
+      await loadCards()
+    } catch {
+      toast.error('Failed to delete card')
+    }
+  }
+
+  // Copy target URL
+  function copyCardUrl(code) {
+    const url = getCardUrl(code)
+    navigator.clipboard.writeText(url)
+    toast.success(`Copied: ${url}`)
+  }
+
+  // Download All as ZIP
+  async function downloadAllZip() {
     const { default: JSZip } = await import('jszip')
     const { saveAs } = await import('file-saver')
     const zip = new JSZip()
 
-    const canvases = qrContainerRef.current?.querySelectorAll('[data-shopid] canvas')
-    if (!canvases?.length) return
+    const cardElements = qrGridRef.current?.querySelectorAll('[data-cardcode]')
+    if (!cardElements?.length) {
+      toast.error('No QR codes available to download')
+      return
+    }
 
-    const promises = [...canvases].map(canvas => {
+    toast('Preparing ZIP file…', { icon: '⏳' })
+
+    const promises = [...cardElements].map(el => {
       return new Promise(resolve => {
-        const shopId = canvas.closest('[data-shopid]').dataset.shopid
-        const shop = shops.find(s => s.id === shopId)
-        canvas.toBlob(blob => {
-          zip.file(`${shop?.name || shopId}-qr.png`, blob)
+        const code = el.dataset.cardcode
+        const canvas = el.querySelector('canvas')
+        if (canvas) {
+          canvas.toBlob(blob => {
+            zip.file(`${code}-qr.png`, blob)
+            resolve()
+          })
+        } else {
           resolve()
-        })
+        }
       })
     })
 
     await Promise.all(promises)
     const content = await zip.generateAsync({ type: 'blob' })
-    saveAs(content, 'nfc-tap-qr-codes.zip')
-    toast.success('ZIP downloaded!')
+    saveAs(content, `nfc-batch-qr-codes.zip`)
+    toast.success('Downloaded all QR codes as ZIP!')
   }
 
-  function downloadSingle(shop, canvas) {
+  // Download single QR
+  function downloadSingle(code, canvas) {
+    if (!canvas) return
     const link = document.createElement('a')
-    link.download = `${shop.name}-qr.png`
+    link.download = `${code}-qr.png`
     link.href = canvas.toDataURL('image/png')
     link.click()
   }
 
-  const selectedShops = shops.filter(s => selected.has(s.id))
+  // Print all visible cards
+  function printCards() {
+    window.print()
+  }
 
   return (
-    <div>
+    <div className="cards-management-page">
+      {/* Header */}
       <div className="page-header">
         <div className="page-header-left">
-          <h1>Bulk QR Generator</h1>
-          <p>Generate and download QR codes for all your shops</p>
+          <h1>QR & NFC Card Manager</h1>
+          <p>Pre-generate printable batches, scan on-site, and assign instantly to shops</p>
+        </div>
+        <div className="page-header-right" style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setScanModalOpen(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', boxShadow: '0 0 16px rgba(99,102,241,0.4)' }}
+          >
+            <Camera size={18} /> Scan QR to Assign
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setBatchModalOpen(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
+          >
+            <Plus size={18} /> Generate Batch
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={downloadAllZip}
+            disabled={cards.length === 0}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
+          >
+            <Download size={16} /> Download ZIP
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={printCards}
+            disabled={cards.length === 0}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
+          >
+            <Printer size={16} /> Print Sheet
+          </button>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', maxWidth: 760 }}>
-        {/* Shop Selector */}
-        <div className="card">
-          <h3 style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Select Shops</h3>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-            {selected.size} of {shops.length} selected
-          </p>
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.875rem' }}>
-            <button className="btn btn-ghost btn-sm" onClick={selectAll}>All</button>
-            <button className="btn btn-ghost btn-sm" onClick={deselectAll}>None</button>
-          </div>
-          {loading ? <div className="spinner" style={{ margin: '1rem auto', display: 'block' }} /> : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: 280, overflowY: 'auto' }}>
-              {shops.map(shop => (
-                <label key={shop.id} style={{
-                  display: 'flex', alignItems: 'center', gap: '0.625rem',
-                  padding: '0.5rem 0.625rem', borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer', transition: 'var(--transition)',
-                  background: selected.has(shop.id) ? 'var(--accent-soft)' : 'transparent'
-                }}>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(shop.id)}
-                    onChange={() => toggleSelect(shop.id)}
-                    style={{ accentColor: 'var(--accent)', width: 16, height: 16 }}
-                  />
-                  <div
-                    style={{
-                      width: 10, height: 10, borderRadius: '50%',
-                      background: shop.cover_color || 'var(--accent)',
-                      flexShrink: 0
-                    }}
-                  />
-                  <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{shop.name}</span>
-                </label>
-              ))}
+      {/* Cloud Sync Warning Banner */}
+      {!cardsTableReady && (
+        <div style={{
+          background: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.35)',
+          borderRadius: 'var(--radius-md)',
+          padding: '1.25rem',
+          marginBottom: '1.5rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.75rem'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <h4 style={{ margin: '0 0 0.25rem 0', color: '#f59e0b', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AlertTriangle size={18} /> Phone & Laptop Multi-Device Sync Notice
+              </h4>
+              <p style={{ margin: 0, fontSize: '0.825rem', color: 'var(--text-muted)' }}>
+                The <code>cards</code> table has not been created in Supabase yet. Cards assigned on your phone are currently stored only in your phone's browser memory. Run this quick SQL in your Supabase SQL Editor so both your phone and laptop sync live!
+              </p>
             </div>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={copyCardsSql}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', whiteSpace: 'nowrap' }}
+            >
+              {copiedSql ? <Check size={14} /> : <Copy size={14} />}
+              {copiedSql ? 'Copied SQL!' : 'Copy Supabase SQL'}
+            </button>
+          </div>
+          <pre style={{
+            margin: 0,
+            padding: '0.65rem 0.85rem',
+            background: 'rgba(0,0,0,0.4)',
+            borderRadius: 6,
+            fontSize: '0.76rem',
+            fontFamily: 'monospace',
+            color: '#38bdf8',
+            overflowX: 'auto',
+            border: '1px solid rgba(255,255,255,0.06)'
+          }}>
+{cardsSql}
+          </pre>
+        </div>
+      )}
+
+      {/* Metrics Row */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '1rem',
+        marginBottom: '1.5rem'
+      }}>
+        <div className="card" style={{ padding: '1.25rem' }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Total Printed Cards</div>
+          <div style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>{totalCards}</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>In inventory batch pool</div>
+        </div>
+
+        <div className="card" style={{ padding: '1.25rem' }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Available (Unassigned)</div>
+          <div style={{ fontSize: '1.85rem', fontWeight: 800, color: '#f59e0b' }}>{unassignedCards}</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Ready to take to new shops</div>
+        </div>
+
+        <div className="card" style={{ padding: '1.25rem' }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Assigned to Shops</div>
+          <div style={{ fontSize: '1.85rem', fontWeight: 800, color: '#10b981' }}>{assignedCards}</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Live customer review cards</div>
+        </div>
+      </div>
+
+      {/* Congratulatory / Next Batch Banner */}
+      {allAssigned && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(99,102,241,0.15))',
+          border: '1px solid rgba(16,185,129,0.4)',
+          borderRadius: 'var(--radius-md)',
+          padding: '1.25rem 1.5rem',
+          marginBottom: '1.5rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '1rem'
+        }}>
+          <div>
+            <h3 style={{ margin: '0 0 0.25rem 0', color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.05rem' }}>
+              <Sparkles size={18} /> All Cards in Current Batch Assigned!
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Every physical QR card in your inventory is now assigned to a shop. Generate another batch of QR codes to continue onboarding businesses.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setBatchModalOpen(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
+          >
+            <Plus size={16} /> Generate Next Batch
+          </button>
+        </div>
+      )}
+
+      {/* Filter and Search Bar */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '0.75rem',
+        marginBottom: '1.25rem'
+      }}>
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${filter === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setFilter('all')}
+          >
+            All Cards ({totalCards})
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${filter === 'unassigned' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setFilter('unassigned')}
+            style={{ color: filter !== 'unassigned' ? '#f59e0b' : undefined }}
+          >
+            Available ({unassignedCards})
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${filter === 'assigned' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setFilter('assigned')}
+            style={{ color: filter !== 'assigned' ? '#10b981' : undefined }}
+          >
+            Assigned ({assignedCards})
+          </button>
+        </div>
+
+        <input
+          type="text"
+          className="form-input"
+          placeholder="Search by CARD-ID or Shop Name…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ maxWidth: 300, fontSize: '0.85rem' }}
+        />
+      </div>
+
+      {/* Cards Grid */}
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '3rem' }}>
+          <div className="spinner" style={{ width: 32, height: 32, margin: '0 auto' }} />
+        </div>
+      ) : filteredCards.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-icon">🔳</div>
+          <h3>No cards match your filter</h3>
+          <p>
+            {totalCards === 0
+              ? 'Generate your first batch of printable QR codes to start distributing to shops.'
+              : 'Try changing your search term or filter selection.'}
+          </p>
+          {totalCards === 0 && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ marginTop: '1rem' }}
+              onClick={() => setBatchModalOpen(true)}
+            >
+              <Plus size={16} /> Generate First Batch
+            </button>
           )}
         </div>
+      ) : (
+        <div
+          ref={qrGridRef}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+            gap: '1.25rem'
+          }}
+        >
+          {filteredCards.map(card => {
+            const isAssigned = card.status === 'assigned'
+            const targetUrl = getCardUrl(card.code)
 
-        {/* Options */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div>
-            <h3 style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Options</h3>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Configure your QR codes</p>
-          </div>
-          <div className="form-group">
-            <label className="form-label">QR Size</label>
-            <select className="form-select" value={size} onChange={e => setSize(Number(e.target.value))}>
-              <option value={128}>Small (128px)</option>
-              <option value={200}>Medium (200px)</option>
-              <option value={300}>Large (300px)</option>
-              <option value={400}>Print (400px)</option>
-            </select>
-          </div>
-          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <button className="btn btn-primary btn-lg" onClick={generate} disabled={selected.size === 0}>
-              🔳 Generate {selected.size > 0 ? `${selected.size} QR Code${selected.size > 1 ? 's' : ''}` : ''}
-            </button>
-            {generated && (
-              <button className="btn btn-ghost" onClick={downloadAll}>
-                📦 Download All as ZIP
-              </button>
-            )}
-          </div>
+            return (
+              <div
+                key={card.code}
+                data-cardcode={card.code}
+                className="card"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  position: 'relative',
+                  border: isAssigned ? '1px solid rgba(16,185,129,0.25)' : '1px solid rgba(245,158,11,0.25)',
+                  background: isAssigned ? 'rgba(16,185,129,0.02)' : 'rgba(245,158,11,0.02)'
+                }}
+              >
+                {/* Header status */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <span style={{
+                    fontFamily: 'monospace',
+                    fontWeight: 700,
+                    fontSize: '0.95rem',
+                    color: 'var(--text-primary)',
+                    letterSpacing: '0.04em'
+                  }}>
+                    {card.code}
+                  </span>
+                  <span className="badge" style={{
+                    fontSize: '0.7rem',
+                    background: isAssigned ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
+                    color: isAssigned ? '#10b981' : '#f59e0b',
+                    border: `1px solid ${isAssigned ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`
+                  }}>
+                    {isAssigned ? '🟢 Assigned' : '🟡 Available'}
+                  </span>
+                </div>
+
+                {/* QR Code Frame */}
+                <div style={{
+                  background: '#ffffff',
+                  padding: '0.85rem',
+                  borderRadius: 10,
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  marginBottom: '0.85rem',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                }}>
+                  <QRCodeCanvas
+                    value={targetUrl}
+                    size={180}
+                    level="H"
+                    includeMargin={false}
+                  />
+                </div>
+
+                {/* Target URL */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: 'var(--bg-glass)',
+                  padding: '0.4rem 0.6rem',
+                  borderRadius: 6,
+                  fontSize: '0.725rem',
+                  marginBottom: '0.75rem',
+                  border: '1px solid var(--border)'
+                }}>
+                  <span style={{ color: 'var(--accent)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    /c/{card.code}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => copyCardUrl(card.code)}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
+                    title="Copy Target Link"
+                  >
+                    <Copy size={13} />
+                  </button>
+                </div>
+
+                {/* Assigned Shop info */}
+                <div style={{ flex: 1, marginBottom: '0.85rem' }}>
+                  {isAssigned ? (
+                    <div>
+                      <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>Linked Shop:</div>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                        {card.shop_name || card.shop?.name || card.shop_id}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      Ready to take on-site and assign to a business
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
+                  {isAssigned ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ flex: 1, fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
+                        onClick={() => window.open(targetUrl, '_blank')}
+                      >
+                        <ExternalLink size={13} /> Test Link
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: '0.75rem' }}
+                        onClick={() => setAssignModal({ open: true, code: card.code })}
+                        title="Reassign to another shop"
+                      >
+                        Reassign
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ color: '#ef4444', fontSize: '0.75rem' }}
+                        onClick={() => handleUnassign(card.code)}
+                        title="Unassign this card"
+                      >
+                        <RotateCcw size={13} />
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      style={{ width: '100%', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                      onClick={() => setAssignModal({ open: true, code: card.code })}
+                    >
+                      ⚡ Assign to Shop
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
-      </div>
+      )}
 
-      {/* Generated QRs */}
-      {generated && (
-        <div style={{ marginTop: '2rem' }}>
-          <div className="divider" />
-          <h3 style={{ fontWeight: 700, marginBottom: '1rem' }}>
-            Generated QR Codes
-            <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.875rem', marginLeft: '0.5rem' }}>
-              ({selectedShops.length})
-            </span>
-          </h3>
-          <div
-            ref={qrContainerRef}
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' }}
-          >
-            {selectedShops.map(shop => (
-              <QRCard key={shop.id} shop={shop} size={size} onDownload={downloadSingle} />
-            ))}
+      {/* Batch Generator Modal */}
+      {batchModalOpen && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setBatchModalOpen(false)}>
+          <div className="modal" style={{ maxWidth: 460 }}>
+            <div className="modal-header">
+              <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Plus size={20} color="var(--accent)" /> Generate Bulk QR Codes
+              </h2>
+              <button className="modal-close" onClick={() => setBatchModalOpen(false)}>✕</button>
+            </div>
+
+            <form onSubmit={handleGenerateBatch}>
+              <div className="modal-grid">
+                <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                  <label className="form-label">Batch Name</label>
+                  <input
+                    className="form-input"
+                    placeholder="e.g. Batch #2 (50 Standees)"
+                    value={batchName}
+                    onChange={e => setBatchName(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Quantity</label>
+                  <select
+                    className="form-input"
+                    value={batchQty}
+                    onChange={e => setBatchQty(Number(e.target.value))}
+                  >
+                    <option value={10}>10 Cards</option>
+                    <option value={20}>20 Cards</option>
+                    <option value={50}>50 Cards</option>
+                    <option value={100}>100 Cards</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Code Prefix</label>
+                  <input
+                    className="form-input"
+                    value={batchPrefix}
+                    onChange={e => setBatchPrefix(e.target.value.toUpperCase())}
+                    placeholder="CARD-"
+                  />
+                </div>
+
+                <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                  <label className="form-label">Starting Number (Optional)</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    placeholder="Auto-calculated from highest number"
+                    value={batchStartNum}
+                    onChange={e => setBatchStartNum(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="modal-actions" style={{ marginTop: '1.25rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setBatchModalOpen(false)}
+                  disabled={generating}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={generating}>
+                  {generating ? 'Generating…' : `Generate ${batchQty} QR Codes`}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
-    </div>
-  )
-}
 
-function QRCard({ shop, size, onDownload }) {
-  const ref = useRef(null)
-  const url = getReviewUrl(shop)
+      {/* Scan Card Modal */}
+      {scanModalOpen && (
+        <ScanCardModal
+          isOpen={scanModalOpen}
+          onClose={() => setScanModalOpen(false)}
+          onCardDetected={handleCardDetected}
+        />
+      )}
 
-  return (
-    <div data-shopid={shop.id} className="card" style={{ textAlign: 'center' }}>
-      <div ref={ref} style={{
-        background: '#fff', borderRadius: '8px', padding: '0.75rem',
-        display: 'inline-block', marginBottom: '0.75rem'
-      }}>
-        <QRCodeCanvas value={url} size={size} level="H" />
-      </div>
-      <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '0.25rem' }}>{shop.name}</p>
-      <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginBottom: '0.75rem', wordBreak: 'break-all' }}>
-        {url}
-      </p>
-      <button className="btn btn-ghost btn-sm" style={{ width: '100%' }}
-        onClick={() => {
-          const canvas = ref.current?.querySelector('canvas')
-          if (canvas) onDownload(shop, canvas)
-        }}>
-        ⬇ Download
-      </button>
+      {/* Assign Card Modal */}
+      {assignModal.open && (
+        <AssignCardModal
+          cardCode={assignModal.code}
+          isOpen={assignModal.open}
+          onClose={() => setAssignModal({ open: false, code: '' })}
+          onAssigned={() => loadCards()}
+        />
+      )}
     </div>
   )
 }
